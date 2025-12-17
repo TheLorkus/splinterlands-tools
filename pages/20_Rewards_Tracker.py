@@ -105,11 +105,7 @@ def render_page():
         with col1:
             usernames_raw = st.text_input("Usernames (comma separated)", value="")
         with col2:
-            scholar_pct = (
-                st.number_input("Scholar share (%)", min_value=0, max_value=100, value=0, step=5)
-                if scholar_mode
-                else 0
-            )
+            scholar_pct = st.number_input("Scholar share (%)", min_value=0, max_value=100, value=0, step=5) if scholar_mode else 0
         with col3:
             refresh_clicked = st.button("Refresh now")
 
@@ -256,9 +252,7 @@ def render_page():
 
     with tab_tournaments:
         st.markdown("### Tournament lookup")
-        lookup_username = st.text_input(
-            "Tournament username", value=(usernames[0] if usernames else "")
-        )
+        lookup_username = st.text_input("Tournament username", value=(usernames[0] if usernames else ""))
         if lookup_username.strip():
             with st.spinner(f"Loading tournaments for {lookup_username}..."):
                 user_tournaments = cached_tournaments(lookup_username)
@@ -282,12 +276,8 @@ def render_page():
                             "Tournament": tournament_name,
                             "Start": t.start_date.date() if t.start_date else "-",
                             "Finish": finish_value,
-                            "Prize": _format_token_amounts_dict(
-                                _token_amounts_from_rewards(getattr(t, "rewards", None)), prices
-                            ),
-                            "Entry fee": _format_token_amounts_dict(
-                                _entry_fee_to_tokens(getattr(t, "entry_fee", None)), prices
-                            ),
+                            "Prize": _format_token_amounts_dict(_token_amounts_from_rewards(getattr(t, "rewards", None)), prices),
+                            "Entry fee": _format_token_amounts_dict(_entry_fee_to_tokens(getattr(t, "entry_fee", None)), prices),
                         }
                     )
                 if display_rows:
@@ -371,18 +361,10 @@ def render_page():
                     history_table_rows.append(
                         {
                             "Season": season_label,
-                            "Ranked tokens": _format_token_amounts_dict(
-                                totals.ranked.token_amounts, prices
-                            ),
-                            "Tournament tokens": _format_token_amounts_dict(
-                                totals.tournament.token_amounts, prices
-                            ),
-                            "Brawl tokens": _format_token_amounts_dict(
-                                totals.brawl.token_amounts, prices
-                            ),
-                            "Overall tokens": _format_token_amounts_dict(
-                                totals.overall.token_amounts, prices
-                            ),
+                            "Ranked tokens": _format_token_amounts_dict(totals.ranked.token_amounts, prices),
+                            "Tournament tokens": _format_token_amounts_dict(totals.tournament.token_amounts, prices),
+                            "Brawl tokens": _format_token_amounts_dict(totals.brawl.token_amounts, prices),
+                            "Overall tokens": _format_token_amounts_dict(totals.overall.token_amounts, prices),
                             "Scholar payout": payout_display,
                             "Currency": payout_currency,
                         }
@@ -420,13 +402,9 @@ def render_page():
                         )
                         save_key = f"history_save_{normalized_history_username.lower()}_{_record_season_id(record)}_{idx}"
                         if cols[3].button("Save currency", key=save_key):
-                            if update_season_currency(
-                                normalized_history_username, _record_season_id(record), selected_currency
-                            ):
+                            if update_season_currency(normalized_history_username, _record_season_id(record), selected_currency):
                                 if feedback_key:
-                                    st.session_state[feedback_key] = (
-                                        f"Scholar payout currency updated to {selected_currency} for season {_record_season_id(record)}."
-                                    )
+                                    st.session_state[feedback_key] = f"Scholar payout currency updated to {selected_currency} for season {_record_season_id(record)}."
                                 st.experimental_rerun()  # type: ignore[attr-defined]
                             else:
                                 cols[3].error("Failed to update the payout currency; check your database configuration.")
@@ -459,9 +437,7 @@ def _aggregate_history_record(record, prices) -> AggregatedTotals:
         token_amounts=_parse_token_amounts(record.get("entry_fees_tokens")),
         usd=_safe_float(record.get("entry_fees_usd")),
     )
-    overall_tokens = _merge_token_amounts(
-        ranked.token_amounts, brawl.token_amounts, tournament.token_amounts, entry_fees.token_amounts
-    )
+    overall_tokens = _merge_token_amounts(ranked.token_amounts, brawl.token_amounts, tournament.token_amounts, entry_fees.token_amounts)
     overall_usd = _safe_float(record.get("overall_usd"))
     if not overall_usd:
         overall_usd = _sum_rewards_usd([ranked, brawl, tournament], prices) - entry_fees.usd
