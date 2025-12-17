@@ -126,7 +126,7 @@ def _supabase_fetch(path: str, params: Dict[str, object] | None = None) -> list[
 
 def refresh_tournament_ingest_all(max_age_days: int = 3) -> bool:
     """
-    Trigger the ingest function for all active organizers with a limited window.
+    Trigger the ingest edge function for all active organizers with a limited window.
     Returns True on success, False on failure or missing creds.
     """
     creds = get_supabase_client()
@@ -136,7 +136,7 @@ def refresh_tournament_ingest_all(max_age_days: int = 3) -> bool:
     payload = {"max_age_days": max_age_days}
     try:
         resp = requests.post(
-            f"{url}/rest/v1/rpc/refresh_tournament_ingest",
+            f"{url}/functions/v1/tournament-ingest",
             headers=_build_auth_headers(key, "application/json"),
             json=payload,
             timeout=60,

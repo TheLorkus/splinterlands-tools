@@ -217,10 +217,10 @@ def render_page(embed_mode: bool = False) -> None:
                 "Best": None,
                 "Podiums": None,
             }
-            df = pd.concat(
-                [df.iloc[: cutoff_idx + 1], pd.DataFrame([sentinel]), df.iloc[cutoff_idx + 1 :]],
-                ignore_index=True,
-            )
+            sentinel_df = pd.DataFrame([sentinel]).dropna(axis=1, how="all")
+            frames = [df.iloc[: cutoff_idx + 1], sentinel_df, df.iloc[cutoff_idx + 1 :]]
+            frames = [frame for frame in frames if not frame.empty]
+            df = pd.concat(frames, ignore_index=True)
 
             def _highlight_cutoff(row):
                 if str(row.get("Player", "")).startswith("Cutoff at"):
