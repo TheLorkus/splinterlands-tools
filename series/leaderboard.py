@@ -170,7 +170,7 @@ def render_page(embed_mode: bool = False) -> None:
         if not player:
             continue
         pts = _as_float(row.get(points_key)) or 0
-        finish = row.get("finish")
+        finish = _as_float(row.get("finish"))
         agg = totals_map.setdefault(
             player,
             {"points": 0.0, "events": 0, "finishes": [], "podiums": 0},
@@ -179,14 +179,14 @@ def render_page(embed_mode: bool = False) -> None:
         agg["events"] += 1
         if finish is not None:
             agg["finishes"].append(finish)
-            if isinstance(finish, (int, float)) and 1 <= float(finish) <= 3:
+            if 1 <= finish <= 3:
                 agg["podiums"] += 1
 
     total_rows = []
     for player, agg in totals_map.items():
-        finishes = [f for f in agg["finishes"] if f is not None]
+        finishes = agg["finishes"]
         avg_finish = sum(finishes) / len(finishes) if finishes else None
-        best_finish = min(finishes) if finishes else None
+        best_finish = int(min(finishes)) if finishes else None
         total_rows.append(
             {
                 "Player": player,
@@ -221,8 +221,6 @@ def render_page(embed_mode: bool = False) -> None:
                 [df.iloc[: cutoff_idx + 1], pd.DataFrame([sentinel]), df.iloc[cutoff_idx + 1 :]],
                 ignore_index=True,
             )
-            mask = df["Player"].astype(str).str.startswith("Cutoff at")
-            df.loc[mask, ["Points", "Events", "Avg Finish", "Best", "Podiums"]] = ""
 
             def _highlight_cutoff(row):
                 if str(row.get("Player", "")).startswith("Cutoff at"):
