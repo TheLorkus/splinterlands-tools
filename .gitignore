@@ -1,0 +1,30 @@
+# Environments and secrets
+.env
+.env.local
+.streamlit/secrets.toml
+.venv
+venv
+
+# Python cache
+__pycache__/
+*.py[cod]
+.ruff_cache
+.pytest_cache
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+.write-check
+
+# Local data
+data/*.json
+data/*.csv
+
+# Supabase CLI artifacts
+supabase/.temp/
+
+# Local docs/scripts not for git
+planning_doc
+scripts/ingest_tournament_results.py
+docs/tournament_ingest_admin.md

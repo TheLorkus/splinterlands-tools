@@ -1,0 +1,28 @@
+1. Purpose
+- Splinterlands Tools tracks Splinterlands scholar rewards and tournaments, converts them to USD, and surfaces per-account totals + payouts via a Streamlit dashboard.
+
+2. Main components
+- `app.py`: Streamlit UI that gathers usernames, displays aggregates/tables, and controls refresh/persistence + currency selectors.
+- `app.py` also now exposes the “Brawl Assistant” landing page (default with sidebar slider) that mirrors the original brawl dashboard layout, shows the guild history/drill-down table, player stat window, and the new Altair-based wins/losses plus win-rate charts.
+- `scholar_helper.services`: API client and aggregation helpers that fetch season data, prices, rewards, and tournaments, then summarize tokens and USD values.
+- `scholar_helper.models`: Dataclasses representing seasons, rewards, tournaments, and aggregated totals.
+- `scholar_helper.services.storage`: Optional Supabase persistence for snapshots and tournament logs.
+- `scripts/import_season_history.py`: CSV-backed helper that upserts historical snapshots into `public.season_rewards` with mappings for token buckets, `scholar_payout`, and optional season ranges.
+
+3. Data flow
+- Input: comma-separated usernames, scholar percentage, and currency selections per account.
+- Processing: cached API calls pull season info, price quotes, unclaimed balance histories, and recent tournaments; aggregation functions filter by the current season and sum token/USD totals.
+- Output: per-user metric cards, a configurable table detailing owner/vs scholar shares plus payout currency, reward-source summaries, and optional Supabase sync.
+- Output: per-user metric cards, a configurable table detailing owner/vs scholar shares plus payout currency, reward-source summaries, optional Supabase sync, and a history tab that pulls from either live syncs or imported rows to show the scholar payout.
+- Output: per-user metric cards, a configurable table detailing owner/vs scholar shares plus payout currency, reward-source summaries, optional Supabase sync, a history tab that pulls from either live syncs or imported rows to show the scholar payout, and a first-page Brawl Assistant that surfaces guild/player stats and trend charts derived from the Splinterlands brawl endpoints.
+
+4. External services, APIs, or libraries
+- Streamlit for the UI; `dotenv` for env loading; `httpx` for HTTP requests.
+- Splinterlands APIs: current season, leaderboard/rewards, and tournaments endpoints plus the `/prices` feed for USD conversions.
+- Supabase (via the storage module) for optional persistence when `SUPABASE_URL`/keys are provided.
+
+5. Known limitations / TODOs
+- Still limited to the cached API shapes (e.g., missing reward types or tokens not returned by price feed);
+- Payout table always requires manual refresh for new usernames; no batching or scheduling yet.
+- Persistence is gated behind Supabase credentials; no local fallback storage currently.
+- Historical data imports depend on manually provided CSVs; the new script has been added but mass imports still require Supabase credentials and service-role access to the REST API.
