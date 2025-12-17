@@ -20,6 +20,6 @@ jobs:
           python -m pip install -U pip
           pip install ruff
 
-      - name: Run Ruff
+      - name: Run Ruff (with fix)
         run: |
-          ruff check .
+          ruff check . --fix
