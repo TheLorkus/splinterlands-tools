@@ -39,9 +39,11 @@ def fetch_current_season() -> SeasonWindow:
 
     try:
         settings = fetch_settings()
-        season_payload = settings.get("season", {}) if isinstance(settings, dict) else {}
-        if isinstance(season_payload, dict) and "id" in season_payload:
-            season_id = season_payload.get("id")
+        season_payload_raw = settings.get("season") if isinstance(settings, dict) else None
+        season_payload: dict[str, object] = season_payload_raw if isinstance(season_payload_raw, dict) else {}
+        season_id_raw = season_payload.get("id")
+        if isinstance(season_id_raw, int | str):
+            season_id = season_id_raw
     except Exception:
         # Best-effort; will fall back to the season endpoint directly
         pass
@@ -51,8 +53,10 @@ def fetch_current_season() -> SeasonWindow:
         return season
 
     if settings:
-        season_payload = settings.get("season", {}) if isinstance(settings, dict) else {}
-        previous = settings.get("previous_season", {}) if isinstance(settings, dict) else {}
+        season_payload_raw = settings.get("season") if isinstance(settings, dict) else None
+        previous_raw = settings.get("previous_season") if isinstance(settings, dict) else None
+        season_payload = season_payload_raw if isinstance(season_payload_raw, dict) else {}
+        previous = previous_raw if isinstance(previous_raw, dict) else None
         return SeasonWindow.from_settings(season_payload, previous)
 
     raise RuntimeError("Unable to fetch season data from Splinterlands API")
@@ -112,11 +116,7 @@ def fetch_tournament_leaderboard(tournament_id: str, username: str, payouts: lis
     for player in players:
         if not isinstance(player, dict):
             continue
-        finish = player.get("finish")
-        try:
-            finish_int = int(finish) if finish is not None else None
-        except Exception:
-            finish_int = None
+        finish_int = _coerce_int(player.get("finish"))
         prize_payload = player.get("ext_prize_info") or player.get("prizes") or player.get("prize") or player.get("player_prize")
         prize_tokens = _parse_prize_payload(prize_payload)
         prize_texts: list[str] = []
@@ -135,8 +135,14 @@ def fetch_tournament_leaderboard(tournament_id: str, username: str, payouts: lis
             }
         )
 
-    leaderboard.sort(key=lambda p: p.get("finish") if p.get("finish") is not None else 1_000_000)
+    leaderboard.sort(key=_leaderboard_finish_sort_key)
     return leaderboard
+
+
+def _leaderboard_finish_sort_key(row: dict[str, object]) -> int:
+    finish_val = row.get("finish")
+    finish_int = _coerce_int(finish_val)
+    return finish_int if finish_int is not None else 1_000_000
 
 
 def _infer_prizes_from_payouts(payouts: list[dict[str, object]], finish: int | None) -> list[str]:
@@ -148,28 +154,29 @@ def _infer_prizes_from_payouts(payouts: list[dict[str, object]], finish: int | N
             continue
         start_place = payout.get("start_place")
         end_place = payout.get("end_place")
-        try:
-            start_int = int(start_place)
-            end_int = int(end_place)
-        except Exception:
+        start_int = _coerce_int(start_place)
+        end_int = _coerce_int(end_place)
+        if start_int is None or end_int is None:
             continue
         if not (start_int <= finish <= end_int):
             continue
-        items = payout.get("items") if isinstance(payout.get("items"), list) else []
+        items_raw = payout.get("items")
+        items = items_raw if isinstance(items_raw, list) else []
         for item in items:
             if not isinstance(item, dict):
                 continue
-            qty = item.get("qty") or item.get("amount") or item.get("value")
+            qty = _coerce_float(item.get("qty") or item.get("amount") or item.get("value"))
             token = item.get("type") or item.get("token")
             text = item.get("text")
             usd_value = item.get("usd_value")
             label = ""
             if token == "CUSTOM":
-                label = f"{qty:g}x {text}" if _is_number(qty) and text else text or "Custom prize"
-                if usd_value and _is_number(usd_value):
-                    label += f" (~${float(usd_value):g})"
-            elif _is_number(qty) and token:
-                label = f"{float(qty):g} {token}"
+                label = f"{qty:g}x {text}" if qty is not None and text else text or "Custom prize"
+                usd_val = _coerce_float(usd_value)
+                if usd_val is not None:
+                    label += f" (~${usd_val:g})"
+            elif qty is not None and token:
+                label = f"{qty:g} {token}"
             if label:
                 prizes.append(label)
     return prizes
@@ -238,9 +245,9 @@ def fetch_tournaments_for_season(username: str, season: SeasonWindow, limit: int
 
     Uses a higher limit and stops once tournaments fall before the season start.
     """
-    params = {"username": username}
+    params: dict[str, str] = {"username": username}
     if limit:
-        params["limit"] = limit
+        params["limit"] = str(limit)
     resp = _client.get("https://api.splinterlands.com/tournaments/completed", params=params)
     resp.raise_for_status()
     data = resp.json() or []
@@ -308,8 +315,8 @@ def fetch_unclaimed_balance_history(username: str, token_type: str = "SPS", offs
         if not isinstance(raw, dict):
             continue
         created_at = _parse_dt(raw.get("created_date"))
-        amount = float(raw.get("amount", 0) or 0)
-        if amount <= 0:
+        amount = _coerce_float(raw.get("amount", 0) or 0)
+        if amount is None or amount <= 0:
             # Skip zero/negative adjustments so totals don't go negative
             continue
         entries.append(
@@ -317,7 +324,7 @@ def fetch_unclaimed_balance_history(username: str, token_type: str = "SPS", offs
                 id=str(raw.get("id")),
                 player=str(raw.get("player", username)),
                 token=str(raw.get("token", token_type)),
-                amount=amount,
+                amount=float(amount),
                 type=str(raw.get("type", "")),
                 created_date=created_at,
                 username=username,
@@ -356,8 +363,8 @@ def fetch_unclaimed_balance_history_for_season(
             created_at = _parse_dt(raw.get("created_date"))
             if oldest_in_page is None or created_at < oldest_in_page:
                 oldest_in_page = created_at
-            amount = float(raw.get("amount", 0) or 0)
-            if amount <= 0:
+            amount = _coerce_float(raw.get("amount", 0) or 0)
+            if amount is None or amount <= 0:
                 continue
             if created_at < season.starts or created_at > season.ends:
                 continue
@@ -366,7 +373,7 @@ def fetch_unclaimed_balance_history_for_season(
                     id=str(raw.get("id")),
                     player=str(raw.get("player", username)),
                     token=str(raw.get("token", token_type)),
-                    amount=amount,
+                    amount=float(amount),
                     type=str(raw.get("type", "")),
                     created_date=created_at,
                     username=username,
@@ -410,12 +417,10 @@ def _parse_entry_fee(value: object) -> TokenAmount | None:
     if isinstance(value, str):
         parts = value.split()
         if len(parts) == 2:
-            try:
-                amount = float(parts[0])
-                token = parts[1]
+            amount = _coerce_float(parts[0])
+            token = parts[1]
+            if amount is not None:
                 return TokenAmount(token=token, amount=amount)
-            except Exception:
-                return None
     return None
 
 
@@ -432,15 +437,15 @@ def _parse_player_rewards(raw: dict[str, object]) -> list[TokenAmount]:
         for entry in prize_payload:
             if not isinstance(entry, dict):
                 continue
-            qty = entry.get("qty") or entry.get("amount") or entry.get("value")
+            qty = _coerce_float(entry.get("qty") or entry.get("amount") or entry.get("value"))
             token = entry.get("type") or entry.get("token")
-            if _is_number(qty) and token:
-                rewards.append(TokenAmount(token=str(token), amount=float(qty)))
+            if qty is not None and token:
+                rewards.append(TokenAmount(token=str(token), amount=qty))
     elif isinstance(prize_payload, dict):
-        qty = prize_payload.get("qty") or prize_payload.get("amount") or prize_payload.get("value")
+        qty = _coerce_float(prize_payload.get("qty") or prize_payload.get("amount") or prize_payload.get("value"))
         token = prize_payload.get("type") or prize_payload.get("token")
-        if _is_number(qty) and token:
-            rewards.append(TokenAmount(token=str(token), amount=float(qty)))
+        if qty is not None and token:
+            rewards.append(TokenAmount(token=str(token), amount=qty))
 
     return rewards
 
@@ -461,15 +466,15 @@ def _parse_prize_payload(payload: object) -> list[TokenAmount]:
         for entry in parsed:
             if not isinstance(entry, dict):
                 continue
-            qty = entry.get("qty") or entry.get("amount") or entry.get("value")
+            qty = _coerce_float(entry.get("qty") or entry.get("amount") or entry.get("value"))
             token = entry.get("type") or entry.get("token")
-            if _is_number(qty) and token:
-                rewards.append(TokenAmount(token=str(token), amount=float(qty)))
+            if qty is not None and token:
+                rewards.append(TokenAmount(token=str(token), amount=qty))
     elif isinstance(parsed, dict):
-        qty = parsed.get("qty") or parsed.get("amount") or parsed.get("value")
+        qty = _coerce_float(parsed.get("qty") or parsed.get("amount") or parsed.get("value"))
         token = parsed.get("type") or parsed.get("token")
-        if _is_number(qty) and token:
-            rewards.append(TokenAmount(token=str(token), amount=float(qty)))
+        if qty is not None and token:
+            rewards.append(TokenAmount(token=str(token), amount=qty))
 
     return rewards
 
@@ -488,19 +493,43 @@ def _parse_dt(value: object) -> datetime:
     return datetime.now(tz=UTC)
 
 
-def _is_number(value: object) -> bool:
-    try:
-        float(value)
-        return True
-    except Exception:
-        return False
+def _coerce_float(value: object | None) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _coerce_int(value: object | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _is_number(value: object | None) -> bool:
+    return _coerce_float(value) is not None
 
 
 def _extract_price(value: object) -> float | None:
     """Convert price payloads to a float, handling numeric and dict shapes."""
-    if _is_number(value):
-        price = float(value)
-        return price if price > 0 else None
+    price_val = _coerce_float(value)
+    if price_val is not None:
+        return price_val if price_val > 0 else None
     if isinstance(value, dict):
         for candidate in (
             value.get("usd"),
@@ -509,9 +538,9 @@ def _extract_price(value: object) -> float | None:
             value.get("last"),
             value.get("close"),
         ):
-            if _is_number(candidate):
-                price = float(candidate)
-                return price if price > 0 else None
+            candidate_val = _coerce_float(candidate)
+            if candidate_val is not None:
+                return candidate_val if candidate_val > 0 else None
     return None
 
 
@@ -537,7 +566,7 @@ def _fetch_tournament_detail(tournament_id: object, username: str) -> dict[str, 
         return None
     try:
         url = "https://api.splinterlands.com/tournaments/find"
-        resp = _client.get(url, params={"id": tournament_id, "username": username})
+        resp = _client.get(url, params={"id": str(tournament_id), "username": username})
         resp.raise_for_status()
         payload = resp.json()
         if isinstance(payload, dict):
@@ -597,33 +626,31 @@ def _extract_player_finish(detail_payload: dict[str, object] | None, username: s
                 continue
             if str(player.get("player", "")).lower() != target:
                 continue
-            try:
-                return int(player.get("finish"))
-            except Exception:
-                return None
+            finish_val = _coerce_int(player.get("finish"))
+            if finish_val is not None:
+                return finish_val
 
     current_player = detail_payload.get("current_player")
     if isinstance(current_player, dict) and str(current_player.get("player", "")).lower() == target:
-        try:
-            return int(current_player.get("finish"))
-        except Exception:
-            return None
+        finish_val = _coerce_int(current_player.get("finish"))
+        if finish_val is not None:
+            return finish_val
 
     return None
 
 
 def _fetch_season_from_api(season_id: int | str | None) -> SeasonWindow | None:
     """Fetch the current season from the /season endpoint, deriving start conservatively."""
-    params: dict[str, object] = {}
+    params: dict[str, str] = {}
     if season_id is not None:
-        params["id"] = season_id
+        params["id"] = str(season_id)
     try:
         resp = _client.get("https://api.splinterlands.com/season", params=params or None)
         resp.raise_for_status()
         data = resp.json() or {}
         if not isinstance(data, dict):
             return None
-        resolved_id = int(data.get("id") or season_id or 0)
+        resolved_id = _coerce_int(data.get("id") or season_id or 0) or 0
         ends = _parse_dt(data.get("ends"))
         starts = ends - timedelta(days=15)
         return SeasonWindow(id=resolved_id, ends=ends, starts=starts)
