@@ -36,14 +36,14 @@ serve(async (req) => {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? new URL(req.url).origin;
   const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization");
   const tokenMatch = authHeader ? authHeader.match(/^Bearer\s+(.+)$/i) : null;
   const authToken = tokenMatch?.[1]?.trim() || req.headers.get("apikey")?.trim();
-  if (!supabaseUrl || !authToken) {
+  if (!authToken) {
     return new Response(
-      JSON.stringify({ error: "SUPABASE_URL and Authorization header are required" }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
+      JSON.stringify({ error: "Authorization header is required" }),
+      { status: 401, headers: { "Content-Type": "application/json" } },
     );
   }
 

@@ -199,28 +199,34 @@ def render_page(embed_mode: bool = False) -> None:
         )
 
     total_rows.sort(key=lambda r: r["Points"], reverse=True)
+    qualifying_count = 0
+    if cutoff is not None and cutoff > 0:
+        ticket_icon = "🎫"
+        qualifying_indexes = []
+        for idx, row in enumerate(total_rows):
+            points = row.get("Points")
+            if points is not None and points >= cutoff:
+                row["Player"] = f"{ticket_icon} {row.get('Player')}"
+                qualifying_indexes.append(idx)
+        qualifying_count = len(qualifying_indexes)
+        if qualifying_indexes:
+            cutoff_idx = qualifying_indexes[-1]
+            total_rows.insert(
+                cutoff_idx + 1,
+                {
+                    "Player": f"Cutoff at {cutoff:.0f} pts",
+                    "Points": None,
+                    "Events": None,
+                    "Avg Finish": None,
+                    "Best": None,
+                    "Podiums": None,
+                },
+            )
+
     df = pd.DataFrame(total_rows)
     styler = df.style
     if cutoff is not None and cutoff > 0:
-        ticket_icon = "🎫"
-        df.loc[df["Points"] >= cutoff, "Player"] = (
-            ticket_icon + " " + df.loc[df["Points"] >= cutoff, "Player"].astype(str)
-        )
-        qualifying = df[df["Points"] >= cutoff]
-        if not qualifying.empty:
-            cutoff_idx = qualifying.index[-1]
-            sentinel = {
-                "Player": f"Cutoff at {cutoff:.0f} pts",
-                "Points": None,
-                "Events": None,
-                "Avg Finish": None,
-                "Best": None,
-                "Podiums": None,
-            }
-            insert_at = cutoff_idx + 0.5
-            df.loc[insert_at, df.columns] = [sentinel.get(col) for col in df.columns]
-            df = df.sort_index().reset_index(drop=True)
-
+        if qualifying_count:
             def _highlight_cutoff(row):
                 if str(row.get("Player", "")).startswith("Cutoff at"):
                     return [
@@ -232,7 +238,7 @@ def render_page(embed_mode: bool = False) -> None:
                 return [""] * len(row)
 
             styler = df.style.apply(_highlight_cutoff, axis=1)
-            st.caption(f"Red bar marks cutoff at {cutoff:.0f} points ({len(qualifying)} qualified).")
+            st.caption(f"Red bar marks cutoff at {cutoff:.0f} points ({qualifying_count} qualified).")
         else:
             st.caption(f"No entries meet the {cutoff:.0f}-point cutoff.")
 
