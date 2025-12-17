@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, date
+import warnings
 import pandas as pd
 import streamlit as st
 
@@ -223,7 +224,16 @@ def render_page(embed_mode: bool = False) -> None:
                 },
             )
 
-    df = pd.DataFrame(total_rows)
+    columns = ["Player", "Points", "Events", "Avg Finish", "Best", "Podiums"]
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=(
+                "The behavior of DataFrame concatenation with empty or all-NA entries is deprecated.*"
+            ),
+            category=FutureWarning,
+        )
+        df = pd.DataFrame.from_records(total_rows, columns=columns)
     styler = df.style
     if cutoff is not None and cutoff > 0:
         if qualifying_count:

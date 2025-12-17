@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import logging
 from typing import Dict, Iterable, Optional, Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from dotenv import load_dotenv
 import requests
@@ -20,6 +20,11 @@ TOURNAMENT_EVENTS_TABLE = "tournament_events"
 TOURNAMENT_RESULTS_TABLE = "tournament_results"
 TOURNAMENT_ORGANIZERS_TABLE = "tournament_ingest_organizers"
 SERIES_CONFIGS_TABLE = "series_configs"
+TOURNAMENT_INGEST_STATE_TABLE = "tournament_ingest_state"
+
+API_BASE = "https://api.splinterlands.com"
+DEFAULT_MAX_TOURNAMENTS = 200
+FETCH_TIMEOUT_SECONDS = 20
 
 logger = logging.getLogger(__name__)
 
@@ -124,32 +129,308 @@ def _supabase_fetch(path: str, params: Dict[str, object] | None = None) -> list[
     return data
 
 
+def _parse_datetime(value: object) -> Optional[datetime]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            return None
+    return None
+
+
+def _http_get_json(url: str, params: Dict[str, object] | None = None) -> Optional[object]:
+    try:
+        resp = requests.get(url, params=params, timeout=FETCH_TIMEOUT_SECONDS)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as exc:
+        logger.error("HTTP GET failed for %s: %s", url, exc)
+        return None
+
+
+def _normalize_prize_item(item: object) -> Optional[Dict[str, object]]:
+    if not isinstance(item, dict):
+        return None
+    amount = item.get("amount") or item.get("qty") or item.get("value")
+    token = item.get("token") or item.get("type")
+    text_label = item.get("text")
+    usd_value = item.get("usd_value")
+    if amount is None and token is None and text_label is None:
+        return None
+    return {
+        "amount": amount,
+        "token": token,
+        "text": text_label,
+        "usd_value": usd_value,
+    }
+
+
+def _parse_prizes(player: Dict[str, object], payouts: list) -> tuple[Optional[list], Optional[str]]:
+    prize_tokens: list[Dict[str, object]] = []
+    prize_text_parts: list[str] = []
+
+    direct_prize = (
+        player.get("ext_prize_info")
+        or player.get("prizes")
+        or player.get("prize")
+        or player.get("player_prize")
+    )
+    if isinstance(direct_prize, list):
+        for item in direct_prize:
+            norm = _normalize_prize_item(item)
+            if norm:
+                prize_tokens.append(norm)
+                text = norm.get("text") or f"{norm.get('amount')} {norm.get('token')}".strip()
+                if text:
+                    prize_text_parts.append(str(text))
+    elif isinstance(direct_prize, dict):
+        norm = _normalize_prize_item(direct_prize)
+        if norm:
+            prize_tokens.append(norm)
+            text = norm.get("text") or f"{norm.get('amount')} {norm.get('token')}".strip()
+            if text:
+                prize_text_parts.append(str(text))
+    elif isinstance(direct_prize, str):
+        prize_text_parts.append(direct_prize)
+
+    finish = player.get("finish")
+    try:
+        finish_int = int(finish) if finish is not None else None
+    except Exception:
+        finish_int = None
+
+    if isinstance(payouts, list) and finish_int is not None:
+        for payout in payouts:
+            if not isinstance(payout, dict):
+                continue
+            start_place = payout.get("start_place")
+            end_place = payout.get("end_place")
+            try:
+                start_place = int(start_place)
+                end_place = int(end_place)
+            except Exception:
+                continue
+            if not (start_place <= finish_int <= end_place):
+                continue
+            items = payout.get("items") or []
+            for item in items:
+                norm = _normalize_prize_item(item)
+                if norm:
+                    prize_tokens.append(norm)
+                    text = norm.get("text") or f"{norm.get('amount')} {norm.get('token')}".strip()
+                    if text:
+                        prize_text_parts.append(str(text))
+
+    prize_text = "; ".join(sorted(set(prize_text_parts))) if prize_text_parts else None
+    return (prize_tokens or None), prize_text
+
+
+def _upsert_ingest_state(rows: Sequence[Dict[str, object]]) -> None:
+    if not rows:
+        return
+    creds = get_supabase_client()
+    if creds is None:
+        return
+    url, key = creds
+    try:
+        _postgrest_upsert(url, key, TOURNAMENT_INGEST_STATE_TABLE, rows)
+    except Exception as exc:
+        logger.error("Ingest state upsert failed: %s", exc)
+
+
+def _ingest_organizer_tournaments(
+    organizer: str,
+    max_age_days: int,
+    max_tournaments: int,
+) -> tuple[int, int]:
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    cutoff_ts = now - timedelta(days=max_age_days)
+
+    list_resp = _http_get_json(f"{API_BASE}/tournaments/mine", params={"username": organizer})
+    if not isinstance(list_resp, list):
+        raise RuntimeError(f"No tournaments returned for organizer {organizer}")
+
+    event_rows: list[Dict[str, object]] = []
+    result_rows: list[Dict[str, object]] = []
+    processed = 0
+
+    for item in list_resp:
+        if processed >= max_tournaments:
+            break
+        if not isinstance(item, dict):
+            continue
+        tid = item.get("id")
+        if not tid:
+            continue
+
+        list_start = _parse_datetime(item.get("start_date"))
+        if list_start and list_start < cutoff_ts:
+            continue
+
+        detail_resp = _http_get_json(
+            f"{API_BASE}/tournaments/find",
+            params={"id": tid, "username": organizer},
+        )
+        if not isinstance(detail_resp, dict):
+            continue
+
+        start_date = _parse_datetime(detail_resp.get("start_date") or item.get("start_date"))
+        if start_date and start_date < cutoff_ts:
+            continue
+
+        status = detail_resp.get("status") or detail_resp.get("current_round") or item.get("status")
+        entrants = (
+            detail_resp.get("players_registered")
+            or detail_resp.get("num_players")
+            or item.get("players_registered")
+        )
+        detail_data = detail_resp.get("data") if isinstance(detail_resp.get("data"), dict) else {}
+        item_data = item.get("data") if isinstance(item.get("data"), dict) else {}
+        payouts = (
+            detail_data.get("prizes", {}).get("payouts")
+            or detail_resp.get("prizes", {}).get("payouts")
+            or item_data.get("prizes", {}).get("payouts")
+            or []
+        )
+        allowed_cards = detail_data.get("allowed_cards") or item_data.get("allowed_cards")
+
+        event_rows.append(
+            {
+                "tournament_id": str(tid),
+                "organizer": organizer,
+                "name": item.get("name") or detail_resp.get("name") or str(tid),
+                "start_date": start_date.isoformat() if start_date else None,
+                "status": status,
+                "entrants": entrants,
+                "entry_fee_token": None,
+                "entry_fee_amount": None,
+                "payouts": payouts,
+                "allowed_cards": allowed_cards,
+                "raw_list": item,
+                "raw_detail": detail_resp,
+                "updated_at": now_iso,
+            }
+        )
+
+        players = detail_resp.get("players") or []
+        if isinstance(players, list):
+            for player in players:
+                if not isinstance(player, dict):
+                    continue
+                prize_tokens, prize_text = _parse_prizes(player, payouts)
+                result_rows.append(
+                    {
+                        "tournament_id": str(tid),
+                        "player": player.get("player") or player.get("username"),
+                        "finish": player.get("finish"),
+                        "prize_tokens": prize_tokens,
+                        "prize_text": prize_text,
+                        "raw": player,
+                        "updated_at": now_iso,
+                    }
+                )
+
+        processed += 1
+
+    if event_rows:
+        upsert_tournament_events(event_rows)
+    if result_rows:
+        upsert_tournament_results(result_rows)
+
+    return len(event_rows), len(result_rows)
+
+
+def _fallback_organizers() -> list[str]:
+    if st is None:
+        return []
+    raw = st.secrets.get("DEFAULT_USERNAMES")
+    if isinstance(raw, str):
+        candidates = [item.strip() for item in raw.replace("\n", ",").split(",")]
+    elif isinstance(raw, list):
+        candidates = [str(item).strip() for item in raw]
+    else:
+        return []
+    return [name for name in candidates if name]
+
+
 def refresh_tournament_ingest_all(max_age_days: int = 3) -> bool:
     """
-    Trigger the ingest edge function for all active organizers with a limited window.
+    Fetch recent tournaments and upsert directly via PostgREST (no edge functions).
     Returns True on success, False on failure or missing creds.
     """
+    global _last_error
     creds = get_supabase_client()
     if creds is None:
         return False
-    url, key = creds
-    payload = {"max_age_days": max_age_days}
+
+    organizers = fetch_tournament_ingest_organizers(active_only=True)
+    if not organizers:
+        organizers = _fallback_organizers()
+    if not organizers:
+        _last_error = "No active organizers found for ingest."
+        return False
+
     try:
-        resp = requests.post(
-            f"{url}/functions/v1/tournament-ingest",
-            headers=_build_auth_headers(key, "application/json"),
-            json=payload,
-            timeout=60,
+        max_tournaments = int(os.getenv("TOURNAMENT_INGEST_MAX_TOURNAMENTS", DEFAULT_MAX_TOURNAMENTS))
+    except Exception:
+        max_tournaments = DEFAULT_MAX_TOURNAMENTS
+
+    failures: list[str] = []
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for organizer in organizers:
+        _upsert_ingest_state(
+            [
+                {
+                    "organizer": organizer,
+                    "last_run_at": now_iso,
+                    "last_window_days": max_age_days,
+                    "updated_at": now_iso,
+                }
+            ]
         )
-    except Exception as exc:
-        global _last_error
-        _last_error = f"Ingest trigger failed: {exc}"
+        try:
+            event_count, result_count = _ingest_organizer_tournaments(
+                organizer,
+                max_age_days=max_age_days,
+                max_tournaments=max_tournaments,
+            )
+            _upsert_ingest_state(
+                [
+                    {
+                        "organizer": organizer,
+                        "last_success_at": now_iso,
+                        "last_error": None,
+                        "last_event_count": event_count,
+                        "last_result_count": result_count,
+                        "last_window_days": max_age_days,
+                        "updated_at": now_iso,
+                    }
+                ]
+            )
+        except Exception as exc:
+            message = str(exc)
+            failures.append(f"{organizer}: {message}")
+            _upsert_ingest_state(
+                [
+                    {
+                        "organizer": organizer,
+                        "last_error": message,
+                        "last_window_days": max_age_days,
+                        "updated_at": now_iso,
+                    }
+                ]
+            )
+
+    if failures:
+        _last_error = "Ingest failed for: " + "; ".join(failures)
         logger.error(_last_error)
         return False
-    if resp.status_code >= 300:
-        _last_error = f"Ingest trigger failed: {resp.status_code} {resp.text[:512]}"
-        logger.error(_last_error)
-        return False
+    _last_error = None
     return True
 
 
