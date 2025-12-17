@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import requests
-import pandas as pd
-import streamlit as st
 from difflib import SequenceMatcher
+
+import pandas as pd
+import requests
+import streamlit as st
 
 API_BASE = "https://api.splinterlands.com"
 DEFAULT_GUILD_ID = "9780675dc7e05224af937c37b30c3812d4e2ca30"

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, Iterable, List
+from collections.abc import Iterable
 
 from scholar_helper.models import (
     AggregatedTotals,
@@ -17,7 +17,7 @@ RANKED_TYPES = {"modern", "wild", "survival"}
 BRAWL_TYPES = {"brawl"}
 
 
-def filter_rewards_for_season(rewards: Iterable[RewardEntry], season: SeasonWindow) -> List[RewardEntry]:
+def filter_rewards_for_season(rewards: Iterable[RewardEntry], season: SeasonWindow) -> list[RewardEntry]:
     return [
         reward
         for reward in rewards
@@ -27,8 +27,8 @@ def filter_rewards_for_season(rewards: Iterable[RewardEntry], season: SeasonWind
 
 def filter_tournaments_for_season(
     tournaments: Iterable[TournamentResult], season: SeasonWindow
-) -> List[TournamentResult]:
-    filtered: List[TournamentResult] = []
+) -> list[TournamentResult]:
+    filtered: list[TournamentResult] = []
     for t in tournaments:
         if t.start_date is None:
             filtered.append(t)
@@ -50,8 +50,8 @@ def aggregate_totals(
     ranked_entries = [r for r in rewards_list if r.type.lower() in RANKED_TYPES]
     brawl_entries = [r for r in rewards_list if r.type.lower() in BRAWL_TYPES]
 
-    tournament_reward_tokens: List[TokenAmount] = []
-    entry_fees: List[TokenAmount] = []
+    tournament_reward_tokens: list[TokenAmount] = []
+    entry_fees: list[TokenAmount] = []
     for t in tournaments_list:
         tournament_reward_tokens.extend(t.rewards)
         if t.entry_fee:
@@ -62,7 +62,7 @@ def aggregate_totals(
     tournament_totals = _sum_token_amounts(tournament_reward_tokens, prices, lambda t: (t.token, t.amount))
     entry_fee_totals = _sum_token_amounts(entry_fees, prices, lambda f: (f.token, f.amount))
 
-    overall_tokens: Dict[str, float] = defaultdict(float)
+    overall_tokens: dict[str, float] = defaultdict(float)
     for bucket in (ranked_totals, brawl_totals, tournament_totals):
         for token, amount in bucket.token_amounts.items():
             overall_tokens[token] += amount
@@ -82,7 +82,7 @@ def aggregate_totals(
 
 
 def _sum_token_amounts(items, prices: PriceQuotes, extractor) -> CategoryTotals:
-    token_amounts: Dict[str, float] = defaultdict(float)
+    token_amounts: dict[str, float] = defaultdict(float)
     usd_total = 0.0
     for item in items:
         token, amount = extractor(item)
@@ -97,7 +97,7 @@ def _sum_token_amounts(items, prices: PriceQuotes, extractor) -> CategoryTotals:
 
 def _coerce_price(value: object) -> float | None:
     """Convert price payloads to a float, tolerating cached dicts from older runs."""
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return float(value)
     if isinstance(value, dict):
         for candidate in (
@@ -107,9 +107,9 @@ def _coerce_price(value: object) -> float | None:
             value.get("last"),
             value.get("close"),
         ):
-            if isinstance(candidate, (int, float)):
+            if isinstance(candidate, int | float):
                 return float(candidate)
         for candidate in value.values():
-            if isinstance(candidate, (int, float)):
+            if isinstance(candidate, int | float):
                 return float(candidate)
     return None

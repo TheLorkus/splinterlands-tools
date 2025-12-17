@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import os
 
-from dotenv import load_dotenv
 import streamlit as st
-
+from dotenv import load_dotenv
 
 _ENV_LOADED_FLAG = "_SL_TOOLS_ENV_LOADED"
 

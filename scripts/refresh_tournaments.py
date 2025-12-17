@@ -12,11 +12,9 @@ from __future__ import annotations
 
 import argparse
 import os
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 import requests
-
 
 API_BASE = "https://api.splinterlands.com"
 
@@ -31,7 +29,7 @@ def _get_supabase_creds() -> tuple[str, str]:
     return url, key
 
 
-def _http_get(url: str, params: Optional[dict] = None) -> Optional[dict]:
+def _http_get(url: str, params: dict | None = None) -> dict | None:
     try:
         resp = requests.get(url, params=params, timeout=20)
         resp.raise_for_status()
@@ -41,7 +39,7 @@ def _http_get(url: str, params: Optional[dict] = None) -> Optional[dict]:
         return None
 
 
-def _normalize_prize_item(item: dict) -> Optional[dict]:
+def _normalize_prize_item(item: dict) -> dict | None:
     if not isinstance(item, dict):
         return None
     amount = item.get("amount") or item.get("qty") or item.get("value")
@@ -58,9 +56,9 @@ def _normalize_prize_item(item: dict) -> Optional[dict]:
     }
 
 
-def _parse_prizes(player: dict, payouts: list) -> tuple[Optional[list], Optional[str]]:
-    prize_tokens: List[dict] = []
-    prize_text_parts: List[str] = []
+def _parse_prizes(player: dict, payouts: list) -> tuple[list | None, str | None]:
+    prize_tokens: list[dict] = []
+    prize_text_parts: list[str] = []
 
     direct_prize = (
         player.get("ext_prize_info")
@@ -139,10 +137,10 @@ def ingest_organizer(organizer: str, max_age_days: int) -> None:
     if not isinstance(list_resp, list):
         raise SystemExit(f"No tournaments returned for {organizer}")
 
-    cutoff_ts = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+    cutoff_ts = datetime.now(UTC) - timedelta(days=max_age_days)
     event_rows: list[dict] = []
     result_rows: list[dict] = []
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
 
     for item in list_resp:
         tid = item.get("id")

@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, date, timezone
-import pandas as pd
+from datetime import UTC, date, datetime
+from typing import Any, cast
 
+import pandas as pd
 import streamlit as st
 
 from core.config import setup_page
 from scholar_helper.services.api import fetch_hosted_tournaments, fetch_tournament_leaderboard
 from scholar_helper.services.storage import (
-    fetch_tournament_events_supabase,
-    fetch_tournament_results_supabase,
-    fetch_tournament_ingest_organizers,
-    fetch_series_configs,
     fetch_point_schemes,
+    fetch_series_configs,
+    fetch_tournament_events_supabase,
+    fetch_tournament_ingest_organizers,
+    fetch_tournament_results_supabase,
     get_last_supabase_error,
 )
 
@@ -116,7 +117,7 @@ def _to_iso_date(value) -> str | None:
     if not dt:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat()
 
 
@@ -242,9 +243,9 @@ def _fetch_results_from_api(
         for entry in leaderboard:
             if not isinstance(entry, dict):
                 continue
-            finish = entry.get("finish")
+            finish_raw = entry.get("finish")
             try:
-                finish_val = int(finish) if finish is not None else None
+                finish_val = int(finish_raw) if isinstance(finish_raw, int | float | str) else None
             except Exception:
                 finish_val = None
             points = _calculate_points_for_finish(finish_val, scheme)
@@ -283,14 +284,17 @@ def render_page(embed_mode: bool = False) -> None:
         ).strip()
     load_clicked = st.button("Load tournaments", type="primary")
 
-    username = typed_username or (selected_org if selected_org and selected_org != "(none)" else "")
+    username = str(typed_username or (selected_org if selected_org and selected_org != "(none)" else ""))
 
     if load_clicked and not username:
         st.warning("Enter or select an organizer, then click Load.")
         return
 
     configs = fetch_series_configs(username) if username else []
-    config_labels = ["(No saved config)"] + [cfg.get("name") or str(cfg.get("id")) for cfg in configs]
+    configs = cast(list[dict[str, Any]], configs)
+    config_labels = ["(No saved config)"] + [
+        (cfg.get("name") or str(cfg.get("id"))) for cfg in configs if isinstance(cfg, dict)
+    ]
     selected_config_label = st.selectbox("Series config (optional)", options=config_labels, index=0)
     selected_config = None
 
@@ -311,8 +315,8 @@ def render_page(embed_mode: bool = False) -> None:
     with col2:
         name_filter = st.text_input("Tournament name (optional, partial match)", value="")
     with col3:
-        since_date = st.date_input("Start date (optional)", value=None)
-        until_date = st.date_input("End date (optional)", value=None)
+        since_date = st.date_input("Start date (optional)", value=None)  # type: ignore[arg-type]
+        until_date = st.date_input("End date (optional)", value=None)  # type: ignore[arg-type]
 
     # Apply config overrides if selected.
     include_ids: list[str] = []
@@ -323,18 +327,23 @@ def render_page(embed_mode: bool = False) -> None:
             None,
         )
         if selected_config:
-            scheme = selected_config.get("point_scheme") or scheme
-            since_date = selected_config.get("include_after") or since_date
-            until_date = selected_config.get("include_before") or until_date
-            name_filter = selected_config.get("name_filter") or name_filter
-            include_ids = selected_config.get("include_ids") or []
-            exclude_ids = set(selected_config.get("exclude_ids") or [])
+            scheme = str(selected_config.get("point_scheme") or scheme)
+            since_date = cast(date | None, selected_config.get("include_after") or since_date)
+            until_date = cast(date | None, selected_config.get("include_before") or until_date)
+            name_filter = str(selected_config.get("name_filter") or name_filter)
+            include_ids = [str(x) for x in (selected_config.get("include_ids") or []) if x]
+            exclude_ids = {str(x) for x in (selected_config.get("exclude_ids") or []) if x}
             # Normalize label to match the overridden scheme.
             scheme_label = next((label for label, slug in scheme_options.items() if slug == scheme), scheme_label)
 
     schemes = fetch_point_schemes()
-    scheme_map = {s.get("slug"): s for s in schemes} if schemes else {}
-    scheme_def = _resolve_scheme(scheme_map, scheme)
+    # Normalize backend payload into a map keyed strictly by slug strings.
+    scheme_map: dict[str, dict] = (
+        {str(s.get("slug")): s for s in schemes if isinstance(s, dict) and isinstance(s.get("slug"), str)}
+        if schemes
+        else {}
+    )
+    scheme_def = _resolve_scheme(scheme_map, str(scheme))
 
     limit = st.slider("Limit to last N events (0 = all after filters)", min_value=0, max_value=100, value=20)
 
@@ -347,6 +356,7 @@ def render_page(embed_mode: bool = False) -> None:
             until=_parse_date(until_date),
             limit=200,
         )
+    tournaments = cast(list[dict[str, Any]], tournaments)
     supabase_error = get_last_supabase_error() if not tournaments else None
 
     # Live API fallback for any organizer when the database has no rows yet.
@@ -378,18 +388,33 @@ def render_page(embed_mode: bool = False) -> None:
             st.caption("Loaded tournaments from stored data.")
 
     # Optional ruleset filter derived from available allowed_cards.
-    ruleset_labels = sorted({(_format_ruleset(t.get("allowed_cards")) or "-") for t in tournaments})
+    ruleset_labels = sorted(
+        {
+            (
+                _format_ruleset(
+                    t.get("allowed_cards") if isinstance(t.get("allowed_cards"), dict) else None
+                )
+                or "-"
+            )
+            for t in tournaments
+        }
+    )
     ruleset_labels = [label for label in ruleset_labels if label and label != "-"]
     ruleset_labels.insert(0, "All rulesets")
     selected_ruleset = st.selectbox("Ruleset filter (optional)", options=ruleset_labels, index=0)
     if selected_ruleset != "All rulesets":
-        tournaments = [t for t in tournaments if _format_ruleset(t.get("allowed_cards")) == selected_ruleset]
+        tournaments = [
+            t
+            for t in tournaments
+            if _format_ruleset(t.get("allowed_cards") if isinstance(t.get("allowed_cards"), dict) else None)
+            == selected_ruleset
+        ]
         if not tournaments:
             st.info("No tournaments match that ruleset for the selected filters.")
             return
 
     if name_filter:
-        name_lower = name_filter.lower()
+        name_lower = str(name_filter).lower()
         tournaments = [
             t for t in tournaments if name_lower in str(t.get("name") or t.get("tournament_id") or "").lower()
         ]
@@ -414,7 +439,7 @@ def render_page(embed_mode: bool = False) -> None:
             {
                 "Date": _format_date(start_dt),
                 "Tournament": t.get("name") or t.get("tournament_id"),
-                "Ruleset": _format_ruleset(t.get("allowed_cards")),
+                "Ruleset": _format_ruleset(t.get("allowed_cards") if isinstance(t.get("allowed_cards"), dict) else None),
             }
         )
 
@@ -436,7 +461,7 @@ def render_page(embed_mode: bool = False) -> None:
         "participation": "points_participation",
     }.get(scheme, "points_balanced")
 
-    event_ids = [t.get("tournament_id") for t in tournaments if t.get("tournament_id")]
+    event_ids: list[str] = [str(tid) for tid in (t.get("tournament_id") for t in tournaments) if tid]
 
     if source == "supabase":
         with st.spinner("Computing series leaderboard..."):
@@ -456,7 +481,7 @@ def render_page(embed_mode: bool = False) -> None:
             )
 
     if result_rows:
-        totals_map: dict[str, dict[str, object]] = {}
+        totals_map: dict[str, dict[str, Any]] = {}
         for row in result_rows:
             player = str(row.get("player") or "").strip()
             if not player:
@@ -471,7 +496,7 @@ def render_page(embed_mode: bool = False) -> None:
             agg["events"] += 1
             if finish is not None:
                 agg["finishes"].append(finish)
-                if isinstance(finish, (int, float)) and 1 <= float(finish) <= 3:
+                if isinstance(finish, int | float) and 1 <= float(finish) <= 3:
                     agg["podiums"] += 1
 
         total_rows = []
@@ -606,10 +631,11 @@ def render_page(embed_mode: bool = False) -> None:
 
     selected_idx = labels.index(selected_label)
     selected = tournaments[selected_idx]
-    tournament_id = selected.get("tournament_id") or selected.get("id")
+    tournament_id_obj = selected.get("tournament_id") or selected.get("id")
+    tournament_id = str(tournament_id_obj) if tournament_id_obj is not None else ""
     if source == "supabase":
         with st.spinner(f"Loading leaderboard for {selected.get('name') or tournament_id}..."):
-            leaderboard = fetch_tournament_results_supabase(tournament_id)
+            leaderboard = fetch_tournament_results_supabase(tournament_id=tournament_id)
     else:
         leaderboard = results_by_event.get(tournament_id) or []
     if leaderboard:

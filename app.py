@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import streamlit as st
 
+from core.config import setup_page
+from core.home import render_home
+
 st.set_page_config(page_title="Splinterlands Tools")
 st.markdown(
     """
@@ -11,10 +14,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-from core.config import setup_page
-from core.home import render_home
-
 
 setup_page("Splinterlands Tools Hub")
 

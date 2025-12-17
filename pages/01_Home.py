@@ -3,7 +3,6 @@ from __future__ import annotations
 from core.config import render_footer, setup_page
 from core.home import render_home
 
-
 setup_page("Splinterlands Tools Hub")
 
 

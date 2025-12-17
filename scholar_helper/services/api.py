@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from cachetools import TTLCache, cached
@@ -28,14 +27,14 @@ _hosted_tournaments_cache = TTLCache(maxsize=64, ttl=300)
 
 
 @cached(_settings_cache)
-def fetch_settings() -> Dict[str, object]:
+def fetch_settings() -> dict[str, object]:
     resp = _client.get("https://api.splinterlands.com/settings")
     resp.raise_for_status()
     return resp.json()
 
 
 def fetch_current_season() -> SeasonWindow:
-    settings: Dict[str, object] | None = None
+    settings: dict[str, object] | None = None
     season_id: int | str | None = None
 
     try:
@@ -60,13 +59,13 @@ def fetch_current_season() -> SeasonWindow:
 
 
 @cached(_hosted_tournaments_cache)
-def fetch_hosted_tournaments(username: str) -> List[HostedTournament]:
+def fetch_hosted_tournaments(username: str) -> list[HostedTournament]:
     url = f"https://api.splinterlands.com/tournaments/mine?username={username}"
     resp = _client.get(url)
     resp.raise_for_status()
     data = resp.json() or []
 
-    hosted: List[HostedTournament] = []
+    hosted: list[HostedTournament] = []
     for raw in data:
         if not isinstance(raw, dict):
             continue
@@ -95,20 +94,20 @@ def fetch_hosted_tournaments(username: str) -> List[HostedTournament]:
         )
 
     hosted.sort(
-        key=lambda t: t.start_date if t.start_date else datetime.min.replace(tzinfo=timezone.utc),
+        key=lambda t: t.start_date if t.start_date else datetime.min.replace(tzinfo=UTC),
         reverse=True,
     )
     return hosted
 
 
 def fetch_tournament_leaderboard(
-    tournament_id: str, username: str, payouts: Optional[List[Dict[str, object]]] = None
-) -> List[Dict[str, object]]:
+    tournament_id: str, username: str, payouts: list[dict[str, object]] | None = None
+) -> list[dict[str, object]]:
     """Return player finishes and prize info for a tournament id."""
     detail = _fetch_tournament_detail(tournament_id, username)
     players = detail.get("players") if isinstance(detail, dict) else None
     payouts = payouts or []
-    leaderboard: List[Dict[str, object]] = []
+    leaderboard: list[dict[str, object]] = []
     if not isinstance(players, list):
         return leaderboard
 
@@ -127,7 +126,7 @@ def fetch_tournament_leaderboard(
             or player.get("player_prize")
         )
         prize_tokens = _parse_prize_payload(prize_payload)
-        prize_texts: List[str] = []
+        prize_texts: list[str] = []
         if prize_tokens:
             prize_texts.append(", ".join(f"{t.amount:g} {t.token}" for t in prize_tokens))
         inferred = _infer_prizes_from_payouts(payouts, finish_int)
@@ -147,10 +146,10 @@ def fetch_tournament_leaderboard(
     return leaderboard
 
 
-def _infer_prizes_from_payouts(payouts: List[Dict[str, object]], finish: Optional[int]) -> List[str]:
+def _infer_prizes_from_payouts(payouts: list[dict[str, object]], finish: int | None) -> list[str]:
     if not finish or finish <= 0:
         return []
-    prizes: List[str] = []
+    prizes: list[str] = []
     for payout in payouts:
         if not isinstance(payout, dict):
             continue
@@ -183,15 +182,15 @@ def _infer_prizes_from_payouts(payouts: List[Dict[str, object]], finish: Optiona
     return prizes
 
 
-def fetch_tournaments(username: str, limit: int | None = 200) -> List[TournamentResult]:
+def fetch_tournaments(username: str, limit: int | None = 200) -> list[TournamentResult]:
     url = f"https://api.splinterlands.com/tournaments/completed?username={username}"
     resp = _client.get(url)
     resp.raise_for_status()
     data = resp.json() or []
 
-    results: List[TournamentResult] = []
-    future_cutoff = datetime.now(timezone.utc) + timedelta(days=1)
-    filtered: List[Dict[str, object]] = []
+    results: list[TournamentResult] = []
+    future_cutoff = datetime.now(UTC) + timedelta(days=1)
+    filtered: list[dict[str, object]] = []
     for raw in data:
         if isinstance(raw, dict):
             filtered.append(raw)
@@ -218,7 +217,7 @@ def fetch_tournaments(username: str, limit: int | None = 200) -> List[Tournament
         if not rewards:
             rewards = _parse_player_rewards(raw)
 
-        combined_raw: Dict[str, object] = {"list": raw}
+        combined_raw: dict[str, object] = {"list": raw}
         if detail:
             combined_raw["detail"] = detail
 
@@ -241,7 +240,7 @@ def fetch_tournaments(username: str, limit: int | None = 200) -> List[Tournament
 
 def fetch_unclaimed_balance_history(
     username: str, token_type: str = "SPS", offset: int = 0, limit: int = 1000
-) -> List[RewardEntry]:
+) -> list[RewardEntry]:
     url = (
         "https://api.splinterlands.com/players/unclaimed_balance_history"
         f"?username={username}&token_type={token_type}&offset={offset}&limit={limit}"
@@ -250,7 +249,7 @@ def fetch_unclaimed_balance_history(
     resp.raise_for_status()
     payload = resp.json() or []
 
-    entries: List[RewardEntry] = []
+    entries: list[RewardEntry] = []
     for raw in payload:
         if not isinstance(raw, dict):
             continue
@@ -278,7 +277,7 @@ def fetch_prices() -> PriceQuotes:
     resp = _client.get("https://prices.splinterlands.com/prices")
     resp.raise_for_status()
     data = resp.json() or {}
-    prices: Dict[str, float] = {}
+    prices: dict[str, float] = {}
     for key, value in data.items():
         extracted = _extract_price(value)
         if extracted is None:
@@ -291,7 +290,7 @@ def fetch_prices() -> PriceQuotes:
     return PriceQuotes(token_to_usd=prices)
 
 
-def _parse_entry_fee(value: object) -> Optional[TokenAmount]:
+def _parse_entry_fee(value: object) -> TokenAmount | None:
     if not value:
         return None
     # API shape is e.g., "400 DEC" or "2 SPS"
@@ -307,8 +306,8 @@ def _parse_entry_fee(value: object) -> Optional[TokenAmount]:
     return None
 
 
-def _parse_player_rewards(raw: Dict[str, object]) -> List[TokenAmount]:
-    rewards: List[TokenAmount] = []
+def _parse_player_rewards(raw: dict[str, object]) -> list[TokenAmount]:
+    rewards: list[TokenAmount] = []
     # Some tournaments may include `player_prizes` or `player_prize` entries
     prize_payload = None
     for key in ["player_prizes", "player_prize", "prize", "prizes"]:
@@ -333,8 +332,8 @@ def _parse_player_rewards(raw: Dict[str, object]) -> List[TokenAmount]:
     return rewards
 
 
-def _parse_prize_payload(payload: object) -> List[TokenAmount]:
-    rewards: List[TokenAmount] = []
+def _parse_prize_payload(payload: object) -> list[TokenAmount]:
+    rewards: list[TokenAmount] = []
     if not payload:
         return rewards
 
@@ -369,11 +368,11 @@ def _parse_dt(value: object) -> datetime:
         try:
             dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.astimezone(timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
+            return dt.astimezone(UTC)
         except Exception:
             logger.debug("Failed to parse datetime from %s", value, exc_info=True)
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def _is_number(value: object) -> bool:
@@ -384,7 +383,7 @@ def _is_number(value: object) -> bool:
         return False
 
 
-def _extract_price(value: object) -> Optional[float]:
+def _extract_price(value: object) -> float | None:
     """Convert price payloads to a float, handling numeric and dict shapes."""
     if _is_number(value):
         price = float(value)
@@ -403,7 +402,7 @@ def _extract_price(value: object) -> Optional[float]:
     return None
 
 
-def _sanitize_price(token: str, price: float) -> Optional[float]:
+def _sanitize_price(token: str, price: float) -> float | None:
     """Drop clearly bad prices for low-priced tokens to avoid runaway USD totals."""
     ceilings = {
         "sps": 1.0,
@@ -420,7 +419,7 @@ def _sanitize_price(token: str, price: float) -> Optional[float]:
     return price
 
 
-def _fetch_tournament_detail(tournament_id: object, username: str) -> Optional[Dict[str, object]]:
+def _fetch_tournament_detail(tournament_id: object, username: str) -> dict[str, object] | None:
     if not tournament_id:
         return None
     try:
@@ -435,7 +434,7 @@ def _fetch_tournament_detail(tournament_id: object, username: str) -> Optional[D
     return None
 
 
-def _extract_rewards_for_player(detail_payload: Optional[Dict[str, object]], username: str) -> List[TokenAmount]:
+def _extract_rewards_for_player(detail_payload: dict[str, object] | None, username: str) -> list[TokenAmount]:
     """Pull prize tokens for the requested player from a tournament detail payload."""
     if not detail_payload:
         return []
@@ -475,15 +474,15 @@ def _extract_rewards_for_player(detail_payload: Optional[Dict[str, object]], use
 def _tournament_sort_key(result: TournamentResult) -> datetime:
     if result.start_date:
         return result.start_date
-    return datetime.min.replace(tzinfo=timezone.utc)
+    return datetime.min.replace(tzinfo=UTC)
 
 
-def _list_payload_sort_key(raw: Dict[str, object]) -> datetime:
+def _list_payload_sort_key(raw: dict[str, object]) -> datetime:
     start_dt = _parse_dt(raw.get("start_date"))
-    return start_dt if start_dt else datetime.min.replace(tzinfo=timezone.utc)
+    return start_dt if start_dt else datetime.min.replace(tzinfo=UTC)
 
 
-def _extract_player_finish(detail_payload: Optional[Dict[str, object]], username: str) -> Optional[int]:
+def _extract_player_finish(detail_payload: dict[str, object] | None, username: str) -> int | None:
     if not detail_payload:
         return None
     target = username.lower()
@@ -510,9 +509,9 @@ def _extract_player_finish(detail_payload: Optional[Dict[str, object]], username
     return None
 
 
-def _fetch_season_from_api(season_id: int | str | None) -> Optional[SeasonWindow]:
+def _fetch_season_from_api(season_id: int | str | None) -> SeasonWindow | None:
     """Fetch the current season from the /season endpoint, deriving start conservatively."""
-    params: Dict[str, object] = {}
+    params: dict[str, object] = {}
     if season_id is not None:
         params["id"] = season_id
     try:
@@ -530,22 +529,22 @@ def _fetch_season_from_api(season_id: int | str | None) -> Optional[SeasonWindow
 
 
 # Lightweight public wrappers for ingestion and scripting use-cases.
-def fetch_tournament_detail_raw(tournament_id: object, username: str) -> Optional[Dict[str, object]]:
+def fetch_tournament_detail_raw(tournament_id: object, username: str) -> dict[str, object] | None:
     """Return the raw /tournaments/find payload for a given tournament id."""
     return _fetch_tournament_detail(tournament_id, username)
 
 
-def parse_prize_payload(payload: object) -> List[TokenAmount]:
+def parse_prize_payload(payload: object) -> list[TokenAmount]:
     """Expose prize parsing for ingestion scripts."""
     return _parse_prize_payload(payload)
 
 
-def infer_prizes_from_payouts(payouts: List[Dict[str, object]], finish: Optional[int]) -> List[str]:
+def infer_prizes_from_payouts(payouts: list[dict[str, object]], finish: int | None) -> list[str]:
     """Expose prize inference from payout ranges for ingestion scripts."""
     return _infer_prizes_from_payouts(payouts, finish)
 
 
-def parse_entry_fee(value: object) -> Optional[TokenAmount]:
+def parse_entry_fee(value: object) -> TokenAmount | None:
     """Expose entry fee parsing for ingestion scripts."""
     return _parse_entry_fee(value)
 

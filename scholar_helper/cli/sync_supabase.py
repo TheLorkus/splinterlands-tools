@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from typing import Iterable, List, Tuple
+from collections.abc import Iterable
 
 from dotenv import load_dotenv
 
@@ -24,8 +24,8 @@ from scholar_helper.services.storage import (
 logger = logging.getLogger(__name__)
 
 
-def parse_usernames(raw_args: Iterable[str]) -> List[str]:
-    names: List[str] = []
+def parse_usernames(raw_args: Iterable[str]) -> list[str]:
+    names: list[str] = []
     for entry in raw_args:
         for piece in entry.split(","):
             value = piece.strip()
@@ -33,7 +33,7 @@ def parse_usernames(raw_args: Iterable[str]) -> List[str]:
                 names.append(value)
     # Preserve order while deduplicating
     seen = set()
-    deduped: List[str] = []
+    deduped: list[str] = []
     for name in names:
         if name not in seen:
             seen.add(name)
@@ -41,9 +41,9 @@ def parse_usernames(raw_args: Iterable[str]) -> List[str]:
     return deduped
 
 
-def fetch_rows(usernames: Iterable[str]) -> Tuple[List[RewardEntry], List[TournamentResult]]:
-    rewards: List[RewardEntry] = []
-    tournaments: List[TournamentResult] = []
+def fetch_rows(usernames: Iterable[str]) -> tuple[list[RewardEntry], list[TournamentResult]]:
+    rewards: list[RewardEntry] = []
+    tournaments: list[TournamentResult] = []
     for username in usernames:
         logger.info("Fetching rewards for %s", username)
         rewards.extend(fetch_unclaimed_balance_history(username))

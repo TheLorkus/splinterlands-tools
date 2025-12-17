@@ -1,21 +1,9 @@
 from __future__ import annotations
 
-from typing import Dict, List
 import streamlit as st
 
 from core.config import render_footer, setup_page
 from features.scholar.service import (
-    aggregate_totals,
-    cached_prices,
-    cached_rewards,
-    cached_season,
-    cached_tournaments,
-    clear_caches,
-    fetch_season_history,
-    filter_tournaments_for_season,
-    get_supabase_client,
-    parse_usernames,
-    update_season_currency,
     _aggregated_totals_from_record,
     _build_currency_options,
     _format_price,
@@ -28,9 +16,19 @@ from features.scholar.service import (
     _record_season_id,
     _safe_float,
     _sum_rewards_usd,
+    aggregate_totals,
+    cached_prices,
+    cached_rewards,
+    cached_season,
+    cached_tournaments,
+    clear_caches,
+    fetch_season_history,
+    filter_tournaments_for_season,
+    get_supabase_client,
+    parse_usernames,
+    update_season_currency,
 )
 from scholar_helper.models import AggregatedTotals, CategoryTotals, RewardEntry, TournamentResult
-
 
 setup_page("Rewards Tracker")
 
@@ -121,13 +119,13 @@ def render_page():
 
         usernames = parse_usernames(usernames_raw)
 
-        per_user_totals: List[tuple[str, AggregatedTotals]] = []
-        reward_rows: List[RewardEntry] = []
-        tournament_rows: List[TournamentResult] = []
-        user_tournaments_by_user: Dict[str, List[TournamentResult]] = {}
-        currency_choices: Dict[int, str] = {}
+        per_user_totals: list[tuple[str, AggregatedTotals]] = []
+        reward_rows: list[RewardEntry] = []
+        tournament_rows: list[TournamentResult] = []
+        user_tournaments_by_user: dict[str, list[TournamentResult]] = {}
+        currency_choices: dict[int, str] = {}
         default_currency = "SPS"
-        currency_options: List[str] = ["SPS"]
+        currency_options: list[str] = ["SPS"]
 
         for username in usernames:
             with st.spinner(f"Fetching data for {username}..."):
@@ -141,10 +139,10 @@ def render_page():
                 # Attach username to results for downstream display.
                 for reward in user_rewards:
                     if not hasattr(reward, "username"):
-                        setattr(reward, "username", username)
+                        reward.username = username
                 for tournament in user_tournaments:
                     if not hasattr(tournament, "username"):
-                        setattr(tournament, "username", username)
+                        tournament.username = username
 
                 reward_rows.extend(user_rewards)
                 tournament_rows.extend(user_tournaments)
@@ -265,7 +263,7 @@ def render_page():
             with st.spinner(f"Loading tournaments for {lookup_username}..."):
                 user_tournaments = cached_tournaments(lookup_username)
                 for t in user_tournaments:
-                    setattr(t, "username", lookup_username)
+                    t.username = lookup_username
             if not user_tournaments:
                 st.info("No tournaments found for that user.")
             else:
@@ -352,7 +350,7 @@ def render_page():
 
                 history_records_sorted = sorted(records, key=_record_season_id, reverse=True)
                 history_table_rows = []
-                for idx, record in enumerate(history_records_sorted):
+                for _idx, record in enumerate(history_records_sorted):
                     season_label = record.get("season") or record.get("season_id") or "-"
                     scholar_pct = _record_scholar_pct(record)
                     totals = _aggregated_totals_from_record(record)

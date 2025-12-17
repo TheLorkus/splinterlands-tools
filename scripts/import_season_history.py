@@ -7,13 +7,14 @@ import csv
 import json
 import os
 import sys
-from typing import Any, Dict, Iterable, Iterator, List, Mapping, MutableMapping, Sequence, Tuple
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
 
 DEFAULT_SEASON_API = "https://api.splinterlands.com/season?id={season_id}"
-_SEASON_WINDOW_CACHE: Dict[int, Tuple[str, str]] = {}
+_SEASON_WINDOW_CACHE: dict[int, tuple[str, str]] = {}
 
 TABLE_NAME = "season_rewards"
 TOKEN_COLUMNS = ("ranked_tokens", "brawl_tokens", "tournament_tokens", "entry_fees_tokens")
@@ -29,14 +30,14 @@ NUMERIC_COLUMNS = {
 }
 
 
-def _parse_mapping(pairs: Iterable[str]) -> Dict[str, List[str]]:
+def _parse_mapping(pairs: Iterable[str]) -> dict[str, list[str]]:
     """Convert CLI `field=csv_header` arguments into a lookup table."""
-    mapping: Dict[str, List[str]] = {}
+    mapping: dict[str, list[str]] = {}
     for pair in pairs:
         if "=" not in pair:
             raise ValueError("Mappings must be `field=csv column` pairs.")
         field, column = pair.split("=", 1)
-        names: List[str] = [name.strip() for name in column.split("+") if name.strip()]
+        names: list[str] = [name.strip() for name in column.split("+") if name.strip()]
         if not names:
             raise ValueError("Each mapping must include at least one CSV column.")
         mapping[field.strip()] = names
@@ -67,7 +68,7 @@ def _parse_token_bucket(value: str, default_token: str) -> Any:
     return {default_token: numeric}
 
 
-def _ensure_season_window(season_id: int, template: str) -> Tuple[str | None, str | None]:
+def _ensure_season_window(season_id: int, template: str) -> tuple[str | None, str | None]:
     if season_id in _SEASON_WINDOW_CACHE:
         return _SEASON_WINDOW_CACHE[season_id]
     url = template.format(season_id=season_id)
@@ -101,7 +102,7 @@ def _ensure_season_window(season_id: int, template: str) -> Tuple[str | None, st
     return None, None
 
 
-def _chunked(sequence: List[Dict[str, Any]], size: int) -> Iterator[List[Dict[str, Any]]]:
+def _chunked(sequence: list[dict[str, Any]], size: int) -> Iterator[list[dict[str, Any]]]:
     for i in range(0, len(sequence), size):
         yield sequence[i : i + size]
 
@@ -116,7 +117,7 @@ def _merge_token_values(existing: Any, addition: Any) -> Any:
         for token, amount in addition.items():
             merged[token] = merged.get(token, 0) + amount
         return merged
-    if isinstance(existing, (int, float)) and isinstance(addition, (int, float)):
+    if isinstance(existing, int | float) and isinstance(addition, int | float):
         return existing + addition
     return addition
 
@@ -128,8 +129,8 @@ def _build_payload(
     default_username: str,
     season_api_template: str,
     fetch_season_window: bool,
-) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {}
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
     username_headers = column_map.get("username", ("username",))
     row_username = ""
     for header in username_headers:
@@ -155,7 +156,7 @@ def _build_payload(
         "payout_currency",
     ):
         headers = column_map.get(column, (column,))
-        values: List[str] = []
+        values: list[str] = []
         for header in headers:
             entry = row.get(header)
             if entry is None:
@@ -257,7 +258,7 @@ def main() -> None:
 
     column_map = _parse_mapping(args.mapping)
 
-    payloads: List[Dict[str, Any]] = []
+    payloads: list[dict[str, Any]] = []
     with open(args.csv_path, newline="") as csvfile:
         reader = csv.DictReader(csvfile)
         if reader.fieldnames is None:

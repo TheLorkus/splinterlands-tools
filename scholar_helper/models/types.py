@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime, timedelta
 
 
 @dataclass
@@ -12,7 +11,7 @@ class SeasonWindow:
     starts: datetime
 
     @classmethod
-    def from_api(cls, payload: Dict[str, object]) -> "SeasonWindow":
+    def from_api(cls, payload: dict[str, object]) -> SeasonWindow:
         """Build a SeasonWindow from the season endpoint payload."""
         season_id = int(payload.get("id", 0))
         ends_raw = payload.get("ends")
@@ -22,7 +21,7 @@ class SeasonWindow:
         return cls(id=season_id, ends=ends, starts=starts)
 
     @classmethod
-    def from_settings(cls, current: Dict[str, object], previous: Optional[Dict[str, object]]) -> "SeasonWindow":
+    def from_settings(cls, current: dict[str, object], previous: dict[str, object] | None) -> SeasonWindow:
         """Build a SeasonWindow using current + previous season info from /settings."""
         season_id = int(current.get("id", 0))
         ends = _parse_timestamp(current.get("ends"))
@@ -41,21 +40,21 @@ class TokenAmount:
 class TournamentResult:
     id: str
     name: str
-    start_date: Optional[datetime]
-    entry_fee: Optional[TokenAmount]
-    rewards: List[TokenAmount] = field(default_factory=list)
-    finish: Optional[int] = None
-    raw: Dict[str, object] = field(default_factory=dict)
+    start_date: datetime | None
+    entry_fee: TokenAmount | None
+    rewards: list[TokenAmount] = field(default_factory=list)
+    finish: int | None = None
+    raw: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass
 class HostedTournament:
     id: str
     name: str
-    start_date: Optional[datetime]
-    allowed_cards: Dict[str, object] = field(default_factory=dict)
-    payouts: List[Dict[str, object]] = field(default_factory=list)
-    raw: Dict[str, object] = field(default_factory=dict)
+    start_date: datetime | None
+    allowed_cards: dict[str, object] = field(default_factory=dict)
+    payouts: list[dict[str, object]] = field(default_factory=list)
+    raw: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass
@@ -66,20 +65,20 @@ class RewardEntry:
     amount: float
     type: str
     created_date: datetime
-    raw: Dict[str, object] = field(default_factory=dict)
+    raw: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass
 class PriceQuotes:
-    token_to_usd: Dict[str, float]
+    token_to_usd: dict[str, float]
 
-    def get(self, token: str) -> Optional[float]:
+    def get(self, token: str) -> float | None:
         return self.token_to_usd.get(token.lower()) or self.token_to_usd.get(token.upper())
 
 
 @dataclass
 class CategoryTotals:
-    token_amounts: Dict[str, float] = field(default_factory=dict)
+    token_amounts: dict[str, float] = field(default_factory=dict)
     usd: float = 0.0
 
 
@@ -100,8 +99,8 @@ def _parse_timestamp(value: object) -> datetime:
         try:
             dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.astimezone(timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
+            return dt.astimezone(UTC)
         except Exception:
             pass
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)

@@ -14,7 +14,6 @@ from features.brawl.service import (
     search_guilds,
 )
 
-
 setup_page("Brawl Dashboard")
 TREND_CYCLE_LIMIT = 20
 

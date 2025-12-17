@@ -2,12 +2,21 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from typing import Dict, List
 
 import streamlit as st
 
-from scholar_helper.models import AggregatedTotals, CategoryTotals, PriceQuotes, RewardEntry, SeasonWindow, TournamentResult
-from scholar_helper.services.aggregation import aggregate_totals, filter_tournaments_for_season  # noqa: F401
+from scholar_helper.models import (
+    AggregatedTotals,
+    CategoryTotals,
+    PriceQuotes,
+    RewardEntry,
+    SeasonWindow,
+    TournamentResult,
+)
+from scholar_helper.services.aggregation import (  # noqa: F401
+    aggregate_totals,
+    filter_tournaments_for_season,
+)
 from scholar_helper.services.api import (
     fetch_current_season,
     fetch_prices,
@@ -45,12 +54,12 @@ def cached_prices():
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def cached_rewards(username: str) -> List[RewardEntry]:
+def cached_rewards(username: str) -> list[RewardEntry]:
     return fetch_unclaimed_balance_history(username)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def cached_tournaments(username: str) -> List[TournamentResult]:
+def cached_tournaments(username: str) -> list[TournamentResult]:
     return fetch_tournaments(username)
 
 
@@ -61,7 +70,7 @@ def clear_caches():
     cached_tournaments.clear()  # type: ignore[attr-defined]
 
 
-def parse_usernames(raw: str) -> List[str]:
+def parse_usernames(raw: str) -> list[str]:
     return [name.strip() for name in raw.split(",") if name.strip()]
 
 
@@ -83,7 +92,7 @@ def _format_token_amounts_dict(token_amounts, prices) -> str:
     return "; ".join(parts)
 
 
-def _format_rewards_list(rewards: List[RewardEntry] | List[TournamentResult], prices) -> str:
+def _format_rewards_list(rewards: list[RewardEntry] | list[TournamentResult], prices) -> str:
     parts = []
     for reward in rewards:
         token = getattr(reward, "token", None) or getattr(reward, "token", None)
@@ -95,7 +104,7 @@ def _format_rewards_list(rewards: List[RewardEntry] | List[TournamentResult], pr
     return "; ".join(parts) if parts else "-"
 
 
-def _build_currency_options(per_user_totals: List[tuple[str, AggregatedTotals]]) -> List[str]:
+def _build_currency_options(per_user_totals: list[tuple[str, AggregatedTotals]]) -> list[str]:
     currencies = {"SPS", "USD", "ETH", "HIVE", "BTC", "DEC", "VOUCHER"}
     for _, totals in per_user_totals:
         tokens = totals.overall.token_amounts.keys()
@@ -140,7 +149,7 @@ def _format_scholar_payout(
 def _safe_float(value: object | None, default: float = 0.0) -> float:
     if value is None:
         return default
-    if isinstance(value, (float, int)):
+    if isinstance(value, float | int):
         return float(value)
     if isinstance(value, str):
         try:
@@ -180,7 +189,7 @@ def _try_parse_int(value: object | None) -> int | None:
     return None
 
 
-def _parse_token_amounts(payload: object | None) -> Dict[str, float]:
+def _parse_token_amounts(payload: object | None) -> dict[str, float]:
     if not payload:
         return {}
     if isinstance(payload, str):
@@ -190,7 +199,7 @@ def _parse_token_amounts(payload: object | None) -> Dict[str, float]:
             return {}
     if not isinstance(payload, dict):
         return {}
-    tokens: Dict[str, float] = {}
+    tokens: dict[str, float] = {}
     for token, amount in payload.items():
         try:
             key = str(token).upper()
@@ -200,21 +209,21 @@ def _parse_token_amounts(payload: object | None) -> Dict[str, float]:
     return tokens
 
 
-def _category_totals_from_record(record: Dict[str, object], prefix: str) -> CategoryTotals:
+def _category_totals_from_record(record: dict[str, object], prefix: str) -> CategoryTotals:
     tokens = _parse_token_amounts(record.get(f"{prefix}_tokens"))
     usd_value = _safe_float(record.get(f"{prefix}_usd"))
     return CategoryTotals(token_amounts=tokens, usd=usd_value)
 
 
-def _merge_token_amounts(*parts: Dict[str, float]) -> Dict[str, float]:
-    merged: Dict[str, float] = defaultdict(float)
+def _merge_token_amounts(*parts: dict[str, float]) -> dict[str, float]:
+    merged: dict[str, float] = defaultdict(float)
     for part in parts:
         for token, amount in part.items():
             merged[token.upper()] += amount
     return dict(merged)
 
 
-def _aggregated_totals_from_record(record: Dict[str, object]) -> AggregatedTotals:
+def _aggregated_totals_from_record(record: dict[str, object]) -> AggregatedTotals:
     ranked = _category_totals_from_record(record, "ranked")
     brawl = _category_totals_from_record(record, "brawl")
     tournament = _category_totals_from_record(record, "tournament")
@@ -238,11 +247,11 @@ def _aggregated_totals_from_record(record: Dict[str, object]) -> AggregatedTotal
     )
 
 
-def _record_scholar_pct(record: Dict[str, object]) -> float:
+def _record_scholar_pct(record: dict[str, object]) -> float:
     return _safe_float(record.get("scholar_pct"))
 
 
-def _record_season_id(record: Dict[str, object]) -> int:
+def _record_season_id(record: dict[str, object]) -> int:
     return _safe_int(record.get("season_id"))
 
 

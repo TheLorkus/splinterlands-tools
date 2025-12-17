@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import os
 import logging
-from typing import Dict, Iterable, Optional, Sequence, TYPE_CHECKING
-from datetime import datetime, timezone, timedelta
+import os
+from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
-from dotenv import load_dotenv
 import requests
+from dotenv import load_dotenv
+
 try:
     import streamlit as st
 except Exception:  # Streamlit not available in pure CLI runs (e.g., tests)
@@ -29,12 +31,12 @@ FETCH_TIMEOUT_SECONDS = 20
 
 logger = logging.getLogger(__name__)
 
-_last_error: Optional[str] = None
+_last_error: str | None = None
 
 load_dotenv()
 
 
-def _get_supabase_credentials() -> Optional[tuple[str, str]]:
+def _get_supabase_credentials() -> tuple[str, str] | None:
     """Return (url, key) using env first, then Streamlit secrets."""
     url = os.getenv("SUPABASE_URL")
     key = (
@@ -56,7 +58,7 @@ def _get_supabase_credentials() -> Optional[tuple[str, str]]:
     return url, key
 
 
-def get_supabase_client() -> Optional[tuple[str, str]]:
+def get_supabase_client() -> tuple[str, str] | None:
     """
     Backwards-compatible helper used by the app code to check whether Supabase is configured.
 
@@ -72,7 +74,7 @@ def get_supabase_client() -> Optional[tuple[str, str]]:
     return creds
 
 
-def get_last_supabase_error() -> Optional[str]:
+def get_last_supabase_error() -> str | None:
     return _last_error
 
 
@@ -89,7 +91,7 @@ def _postgrest_upsert(url: str, key: str, table: str, rows) -> None:
         _last_error = f"Supabase upsert failed: {resp.status_code} {resp.text}"
 
 
-def _build_auth_headers(key: str, content_type: str | None = None) -> Dict[str, str]:
+def _build_auth_headers(key: str, content_type: str | None = None) -> dict[str, str]:
     headers = {
         "apikey": key,
         "Authorization": f"Bearer {key}",
@@ -99,7 +101,7 @@ def _build_auth_headers(key: str, content_type: str | None = None) -> Dict[str, 
     return headers
 
 
-def _supabase_fetch(path: str, params: Dict[str, object] | None = None) -> list[Dict[str, object]]:
+def _supabase_fetch(path: str, params: dict[str, object] | None = None) -> list[dict[str, object]]:
     """Lightweight GET helper for Supabase REST endpoints/views."""
     global _last_error
     creds = get_supabase_client()
@@ -130,7 +132,7 @@ def _supabase_fetch(path: str, params: Dict[str, object] | None = None) -> list[
     return data
 
 
-def _parse_datetime(value: object) -> Optional[datetime]:
+def _parse_datetime(value: object) -> datetime | None:
     if not value:
         return None
     if isinstance(value, datetime):
@@ -143,7 +145,7 @@ def _parse_datetime(value: object) -> Optional[datetime]:
     return None
 
 
-def _http_get_json(url: str, params: Dict[str, object] | None = None) -> Optional[object]:
+def _http_get_json(url: str, params: dict[str, object] | None = None) -> object | None:
     try:
         resp = requests.get(url, params=params, timeout=FETCH_TIMEOUT_SECONDS)
         resp.raise_for_status()
@@ -153,7 +155,7 @@ def _http_get_json(url: str, params: Dict[str, object] | None = None) -> Optiona
         return None
 
 
-def _normalize_prize_item(item: object) -> Optional[Dict[str, object]]:
+def _normalize_prize_item(item: object) -> dict[str, object] | None:
     if not isinstance(item, dict):
         return None
     amount = item.get("amount") or item.get("qty") or item.get("value")
@@ -170,8 +172,8 @@ def _normalize_prize_item(item: object) -> Optional[Dict[str, object]]:
     }
 
 
-def _parse_prizes(player: Dict[str, object], payouts: list) -> tuple[Optional[list], Optional[str]]:
-    prize_tokens: list[Dict[str, object]] = []
+def _parse_prizes(player: dict[str, object], payouts: list) -> tuple[list | None, str | None]:
+    prize_tokens: list[dict[str, object]] = []
     prize_text_parts: list[str] = []
 
     direct_prize = (
@@ -230,7 +232,7 @@ def _parse_prizes(player: Dict[str, object], payouts: list) -> tuple[Optional[li
     return (prize_tokens or None), prize_text
 
 
-def _upsert_ingest_state(rows: Sequence[Dict[str, object]]) -> None:
+def _upsert_ingest_state(rows: Sequence[dict[str, object]]) -> None:
     if not rows:
         return
     creds = get_supabase_client()
@@ -248,7 +250,7 @@ def _ingest_organizer_tournaments(
     max_age_days: int,
     max_tournaments: int,
 ) -> tuple[int, int]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     now_iso = now.isoformat()
     cutoff_ts = now - timedelta(days=max_age_days)
 
@@ -256,8 +258,8 @@ def _ingest_organizer_tournaments(
     if not isinstance(list_resp, list):
         raise RuntimeError(f"No tournaments returned for organizer {organizer}")
 
-    event_rows: list[Dict[str, object]] = []
-    result_rows: list[Dict[str, object]] = []
+    event_rows: list[dict[str, object]] = []
+    result_rows: list[dict[str, object]] = []
     processed = 0
 
     for item in list_resp:
@@ -382,7 +384,7 @@ def refresh_tournament_ingest_all(max_age_days: int = 3) -> bool:
         max_tournaments = DEFAULT_MAX_TOURNAMENTS
 
     failures: list[str] = []
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     for organizer in organizers:
         _upsert_ingest_state(
             [
@@ -435,13 +437,13 @@ def refresh_tournament_ingest_all(max_age_days: int = 3) -> bool:
     return True
 
 
-def _to_iso(dt: datetime | str | None) -> Optional[str]:
+def _to_iso(dt: datetime | str | None) -> str | None:
     if dt is None:
         return None
     if isinstance(dt, str):
         return dt
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat()
 
 
@@ -505,7 +507,7 @@ def upsert_tournament_logs(
         _postgrest_upsert(url, key, table, rows)
 
 
-def upsert_tournament_events(events: Sequence[Dict[str, object]]) -> None:
+def upsert_tournament_events(events: Sequence[dict[str, object]]) -> None:
     creds = get_supabase_client()
     if creds is None:
         return
@@ -517,7 +519,7 @@ def upsert_tournament_events(events: Sequence[Dict[str, object]]) -> None:
     _postgrest_upsert(url, key, TOURNAMENT_EVENTS_TABLE, events)
 
 
-def upsert_tournament_results(results: Sequence[Dict[str, object]]) -> None:
+def upsert_tournament_results(results: Sequence[dict[str, object]]) -> None:
     creds = get_supabase_client()
     if creds is None:
         return
@@ -534,11 +536,11 @@ def fetch_tournament_events_supabase(
     limit: int = 200,
     since: datetime | str | None = None,
     until: datetime | str | None = None,
-) -> list[Dict[str, object]]:
+) -> list[dict[str, object]]:
     """
     Fetch stored tournament events (ingested metadata) ordered newest-first.
     """
-    params: Dict[str, object] = {"order": "start_date.desc"}
+    params: dict[str, object] = {"order": "start_date.desc"}
     if organizer:
         params["organizer"] = f"eq.{organizer}"
     start_after = _to_iso(since)
@@ -561,12 +563,12 @@ def fetch_tournament_results_supabase(
     organizer: str | None = None,
     since: datetime | str | None = None,
     until: datetime | str | None = None,
-) -> list[Dict[str, object]]:
+) -> list[dict[str, object]]:
     """
     Fetch leaderboard rows (with points) from the tournament_result_points view.
     Supports filtering by organizer, date window, or multiple tournament ids.
     """
-    params: Dict[str, object] = {"order": "finish.asc.nullslast"}
+    params: dict[str, object] = {"order": "finish.asc.nullslast"}
     if tournament_id:
         params["tournament_id"] = f"eq.{tournament_id}"
     elif tournament_ids:
@@ -591,7 +593,7 @@ def fetch_tournament_ingest_organizers(active_only: bool = True) -> list[str]:
     """
     Return known organizers from the ingest table (for UI dropdowns).
     """
-    params: Dict[str, object] = {
+    params: dict[str, object] = {
         "select": "username,active",
         "order": "username.asc",
     }
@@ -606,27 +608,27 @@ def fetch_tournament_ingest_organizers(active_only: bool = True) -> list[str]:
     return usernames
 
 
-def fetch_series_configs(organizer: str | None = None) -> list[Dict[str, object]]:
+def fetch_series_configs(organizer: str | None = None) -> list[dict[str, object]]:
     """
     Fetch saved series configs (public).
     """
-    params: Dict[str, object] = {"order": "name.asc"}
+    params: dict[str, object] = {"order": "name.asc"}
     if organizer:
         params["organizer"] = f"eq.{organizer}"
     return _supabase_fetch(SERIES_CONFIGS_TABLE, params)
 
 
-def fetch_point_schemes() -> list[Dict[str, object]]:
+def fetch_point_schemes() -> list[dict[str, object]]:
     """
     Fetch available point schemes (public).
     """
-    params: Dict[str, object] = {"order": "slug.asc"}
+    params: dict[str, object] = {"order": "slug.asc"}
     return _supabase_fetch("point_schemes", params)
 
 
 def fetch_tournament_leaderboard_totals_supabase(
     organizer: str, scheme: str = "balanced"
-) -> list[Dict[str, object]]:
+) -> list[dict[str, object]]:
     """
     Aggregated series leaderboard per organizer using the points views.
     """
@@ -646,7 +648,7 @@ def fetch_tournament_leaderboard_totals_supabase(
     return _supabase_fetch("tournament_leaderboard_totals", params)
 
 
-def fetch_season_history(username: str) -> list[Dict[str, object]]:
+def fetch_season_history(username: str) -> list[dict[str, object]]:
     creds = get_supabase_client()
     if creds is None:
         return []

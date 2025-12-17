@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from dotenv import load_dotenv
 
@@ -26,7 +26,7 @@ def _parse_usernames(value: str | None) -> list[str]:
 
 
 def _wait_until(target: datetime) -> None:
-    seconds = (target - datetime.now(timezone.utc)).total_seconds()
+    seconds = (target - datetime.now(UTC)).total_seconds()
     if seconds <= 0:
         return
     logging.info("Sleeping for %.1f minutes until %s", seconds / 60, target.isoformat())
@@ -106,7 +106,7 @@ def main() -> None:
         try:
             season = fetch_current_season()
             target = season.ends - timedelta(minutes=10)
-            if target <= datetime.now(timezone.utc):
+            if target <= datetime.now(UTC):
                 logging.warning("Season already within 10 minutes; syncing immediately.")
             else:
                 _wait_until(target)
@@ -115,7 +115,7 @@ def main() -> None:
             _sync_for_season(season, usernames, args.scholar_pct, args.currency)
 
             buffer_until = season.ends + timedelta(minutes=1)
-            seconds = max((buffer_until - datetime.now(timezone.utc)).total_seconds(), 60)
+            seconds = max((buffer_until - datetime.now(UTC)).total_seconds(), 60)
             logging.info("Season %s synced; sleeping %.1f minutes until next season", season.id, seconds / 60)
             time.sleep(seconds)
         except KeyboardInterrupt:

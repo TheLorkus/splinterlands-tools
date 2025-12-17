@@ -3,8 +3,12 @@ from __future__ import annotations
 import streamlit as st
 
 from core.config import render_footer, setup_page
+
 try:
-    from scholar_helper.services.storage import refresh_tournament_ingest_all, get_last_supabase_error
+    from scholar_helper.services.storage import (
+        get_last_supabase_error,
+        refresh_tournament_ingest_all,
+    )
 except ImportError:
     # Fallback to avoid app crash if the helper isn't available in the runtime.
     def refresh_tournament_ingest_all(max_age_days: int = 3) -> bool:  # type: ignore
@@ -13,7 +17,6 @@ except ImportError:
     def get_last_supabase_error() -> str:  # type: ignore
         return "Helper not available"
 from series import leaderboard, tournament
-
 
 setup_page("Tournament Series")
 
@@ -64,7 +67,7 @@ def render_page() -> None:
         st.divider()
         st.subheader("Docs: Tournament Series")
         try:
-            with open("Tournament_Series.md", "r", encoding="utf-8") as f:
+            with open("Tournament_Series.md", encoding="utf-8") as f:
                 doc_text = f.read()
             st.markdown(doc_text)
         except Exception as exc:  # pragma: no cover - best-effort embed

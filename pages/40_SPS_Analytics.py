@@ -4,7 +4,6 @@ import streamlit as st
 
 from core.config import render_footer, setup_page
 
-
 setup_page("SPS Analytics")
 
 
