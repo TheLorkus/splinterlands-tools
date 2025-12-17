@@ -13,10 +13,13 @@ from scholar_helper.services.aggregation import aggregate_totals
 from scholar_helper.services.api import (
     fetch_current_season,
     fetch_prices,
-    fetch_tournaments,
-    fetch_unclaimed_balance_history,
+    fetch_tournaments_for_season,
+    fetch_unclaimed_balance_history_for_season,
 )
-from scholar_helper.services.storage import upsert_season_totals, upsert_tournament_logs
+from scholar_helper.services.storage import (
+    upsert_season_snapshot_if_better,
+    upsert_tournament_logs,
+)
 
 
 def _parse_usernames(value: str | None) -> list[str]:
@@ -51,10 +54,26 @@ def _sync_for_season(
     for username in usernames:
         logging.info("Syncing %s for season %s", username, season.id)
         try:
-            rewards = fetch_unclaimed_balance_history(username)
-            tournaments = fetch_tournaments(username)
+            rewards = fetch_unclaimed_balance_history_for_season(username, season)
+            tournaments = fetch_tournaments_for_season(username, season)
             totals = aggregate_totals(season, rewards, tournaments, prices)
-            upsert_season_totals(season, username, totals, scholar_pct, payout_currency)
+            last_reward_at = max((r.created_date for r in rewards), default=None)
+            last_tournament_at = max((t.start_date for t in tournaments if t.start_date), default=None)
+            updated, message = upsert_season_snapshot_if_better(
+                season,
+                username,
+                totals,
+                scholar_pct,
+                payout_currency,
+                len(rewards),
+                len(tournaments),
+                last_reward_at,
+                last_tournament_at,
+            )
+            if updated:
+                logging.info("Snapshot saved: %s", message)
+            else:
+                logging.info("Snapshot skipped: %s", message)
             upsert_tournament_logs(tournaments, username)
             logging.info("Successfully synced %s", username)
         except Exception as exc:

@@ -28,7 +28,12 @@ from features.scholar.service import (
     parse_usernames,
     update_season_currency,
 )
-from scholar_helper.models import AggregatedTotals, CategoryTotals, RewardEntry, TournamentResult
+from scholar_helper.models import AggregatedTotals, CategoryTotals, RewardEntry, SeasonWindow, TournamentResult
+from scholar_helper.services.api import (
+    fetch_tournaments_for_season,
+    fetch_unclaimed_balance_history_for_season,
+)
+from scholar_helper.services.storage import fetch_season_snapshot, upsert_season_snapshot_if_better
 
 setup_page("Rewards Tracker")
 
@@ -58,6 +63,14 @@ def _token_amounts_from_rewards(rewards) -> dict[str, float]:
     return tokens
 
 
+def _previous_season(season_window: SeasonWindow) -> SeasonWindow:
+    """Derive a previous season window using the current duration."""
+    duration = season_window.ends - season_window.starts
+    prev_end = season_window.starts
+    prev_start = prev_end - duration
+    return SeasonWindow(id=season_window.id - 1, ends=prev_end, starts=prev_start)
+
+
 def render_page():
     st.title("Rewards Tracker")
     st.caption("Account-centric rewards. Toggle Scholar mode for payout tools and history.")
@@ -68,6 +81,8 @@ def render_page():
     except Exception as exc:
         st.error(f"Failed to load base data: {exc}")
         return
+
+    season_options = {"Current": season, "Previous": _previous_season(season)}
 
     price_tokens = ["USD", "SPS", "DEC", "ETH", "HIVE", "BTC", "VOUCHER"]
     price_rows = []
@@ -90,7 +105,9 @@ def render_page():
                 "USD price": st.column_config.TextColumn(),
             },
         )
-    st.write(f"Season {season.id}: {season.starts.date()} \u2192 {season.ends.date()}")
+    season_label = st.radio("Season window", ["Current", "Previous"], horizontal=True, key="season_window")
+    active_season = season_options.get(season_label, season)
+    st.write(f"Season {active_season.id}: {active_season.starts.date()} \u2192 {active_season.ends.date()}")
 
     tab_labels = ["Summary", "Tournaments"]
     if scholar_mode:
@@ -145,7 +162,7 @@ def render_page():
                 user_tournaments_by_user[username] = user_tournaments
 
                 try:
-                    totals = aggregate_totals(season, user_rewards, user_tournaments, prices)
+                    totals = aggregate_totals(active_season, user_rewards, user_tournaments, prices)
                     per_user_totals.append((username, totals))
                 except Exception as exc:
                     st.warning(f"Failed to aggregate data for {username}: {exc}")
@@ -154,7 +171,7 @@ def render_page():
             st.info("No data found yet. Try adding usernames.")
             return
 
-        combined_totals: AggregatedTotals = aggregate_totals(season, reward_rows, tournament_rows, prices)
+        combined_totals: AggregatedTotals = aggregate_totals(active_season, reward_rows, tournament_rows, prices)
 
         if per_user_totals:
             st.markdown("### Per-user totals")
@@ -234,6 +251,63 @@ def render_page():
                     },
                 )
 
+        supabase_creds = get_supabase_client()
+        snapshot_currency_by_user = {username: currency_choices.get(idx, default_currency) if scholar_mode else "SPS" for idx, (username, _) in enumerate(per_user_totals)}
+
+        st.markdown("### Season snapshot to Supabase")
+        if not usernames:
+            st.info("Add at least one username to save a snapshot.")
+        elif supabase_creds is None:
+            st.warning("Supabase is not configured. Set SUPABASE_URL and a key to enable snapshots.")
+        else:
+            existing_snapshots = []
+            for username in usernames:
+                row = fetch_season_snapshot(username, active_season.id)
+                if row:
+                    existing_snapshots.append(
+                        {
+                            "User": username,
+                            "Rewards": row.get("snapshot_reward_count"),
+                            "Tournaments": row.get("snapshot_tournament_count"),
+                            "Last reward": row.get("snapshot_last_reward_at"),
+                            "Last tournament": row.get("snapshot_last_tournament_at"),
+                        }
+                    )
+            if existing_snapshots:
+                st.dataframe(existing_snapshots, hide_index=True, use_container_width=True)
+
+            if st.button("Save/Update season snapshot to Supabase", type="primary"):
+                results = []
+                for username in usernames:
+                    with st.spinner(f"Saving snapshot for {username} (season {active_season.id})..."):
+                        try:
+                            season_rewards = fetch_unclaimed_balance_history_for_season(username, active_season)
+                            season_tournaments = fetch_tournaments_for_season(username, active_season)
+                            totals = aggregate_totals(active_season, season_rewards, season_tournaments, prices)
+                            last_reward_at = max((r.created_date for r in season_rewards), default=None)
+                            last_tournament_at = max((t.start_date for t in season_tournaments if t.start_date), default=None)
+                            payout_currency = snapshot_currency_by_user.get(username, "SPS")
+                            updated, message = upsert_season_snapshot_if_better(
+                                active_season,
+                                username,
+                                totals,
+                                scholar_pct,
+                                payout_currency,
+                                len(season_rewards),
+                                len(season_tournaments),
+                                last_reward_at,
+                                last_tournament_at,
+                            )
+                            results.append((updated, message))
+                        except Exception as exc:
+                            results.append((False, f"{username}: failed to save snapshot ({exc})"))
+
+                for updated, message in results:
+                    if updated:
+                        st.success(message)
+                    else:
+                        st.info(message)
+
         st.markdown("### Rewards by source (all users, season)")
         source_rows = [
             {"Source": "Ranked", "USD (est)": combined_totals.ranked.usd, "Tokens": _format_token_amounts_dict(combined_totals.ranked.token_amounts, prices)},
@@ -261,7 +335,7 @@ def render_page():
             if not user_tournaments:
                 st.info("No tournaments found for that user.")
             else:
-                tournaments_this_season = filter_tournaments_for_season(user_tournaments, season)
+                tournaments_this_season = filter_tournaments_for_season(user_tournaments, active_season)
                 display_rows = []
                 total_prize_usd = 0.0
                 for t in tournaments_this_season:
@@ -292,7 +366,7 @@ def render_page():
                         },
                     )
                 else:
-                    st.info("No tournaments for this user in the current season.")
+                    st.info("No tournaments for this user in the selected season.")
         else:
             st.info("Enter a username to view tournament history.")
 

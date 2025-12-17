@@ -232,6 +232,71 @@ def fetch_tournaments(username: str, limit: int | None = 200) -> list[Tournament
     return results
 
 
+def fetch_tournaments_for_season(username: str, season: SeasonWindow, limit: int | None = 1000) -> list[TournamentResult]:
+    """
+    Fetch tournaments for a user with enough coverage to span the season window.
+
+    Uses a higher limit and stops once tournaments fall before the season start.
+    """
+    params = {"username": username}
+    if limit:
+        params["limit"] = limit
+    resp = _client.get("https://api.splinterlands.com/tournaments/completed", params=params)
+    resp.raise_for_status()
+    data = resp.json() or []
+
+    results: list[TournamentResult] = []
+    future_cutoff = datetime.now(UTC) + timedelta(days=1)
+    filtered: list[dict[str, object]] = []
+    for raw in data:
+        if isinstance(raw, dict):
+            filtered.append(raw)
+
+    filtered.sort(key=_list_payload_sort_key, reverse=True)
+
+    for raw in filtered:
+        entry_fee = _parse_entry_fee(raw.get("entry_fee"))
+        start_dt = _parse_dt(raw.get("start_date"))
+        if start_dt and start_dt > future_cutoff:
+            continue
+
+        detail = _fetch_tournament_detail(raw.get("id"), username)
+        finish = _extract_player_finish(detail, username)
+        if isinstance(detail, dict):
+            entry_fee = _parse_entry_fee(detail.get("entry_fee")) or entry_fee
+            start_dt = _parse_dt(detail.get("start_date")) if detail.get("start_date") else start_dt
+
+        rewards = _extract_rewards_for_player(detail, username)
+        if not rewards:
+            rewards = _parse_player_rewards(raw)
+
+        combined_raw: dict[str, object] = {"list": raw}
+        if detail:
+            combined_raw["detail"] = detail
+
+        result = TournamentResult(
+            id=str(raw.get("id")),
+            name=str(raw.get("name", "Tournament")),
+            start_date=start_dt,
+            entry_fee=entry_fee,
+            username=username,
+            rewards=rewards,
+            finish=finish,
+            raw=combined_raw,
+        )
+
+        if result.start_date:
+            if result.start_date < season.starts:
+                break
+            if result.start_date > season.ends:
+                continue
+
+        results.append(result)
+
+    results.sort(key=_tournament_sort_key, reverse=True)
+    return results
+
+
 def fetch_unclaimed_balance_history(username: str, token_type: str = "SPS", offset: int = 0, limit: int = 1000) -> list[RewardEntry]:
     url = "https://api.splinterlands.com/players/unclaimed_balance_history" f"?username={username}&token_type={token_type}&offset={offset}&limit={limit}"
     resp = _client.get(url)
@@ -259,6 +324,64 @@ def fetch_unclaimed_balance_history(username: str, token_type: str = "SPS", offs
                 raw=raw,
             )
         )
+    return entries
+
+
+def fetch_unclaimed_balance_history_for_season(
+    username: str,
+    season: SeasonWindow,
+    token_type: str = "SPS",
+    page_limit: int = 500,
+) -> list[RewardEntry]:
+    """
+    Fetch rewards with pagination until we cover the season window.
+
+    Stops when the oldest fetched reward is older than the season start (or no rows returned).
+    Filters results to rewards within the season window and skips zero/negative adjustments.
+    """
+    offset = 0
+    entries: list[RewardEntry] = []
+    while True:
+        url = "https://api.splinterlands.com/players/unclaimed_balance_history" f"?username={username}&token_type={token_type}&offset={offset}&limit={page_limit}"
+        resp = _client.get(url)
+        resp.raise_for_status()
+        payload = resp.json() or []
+        if not isinstance(payload, list) or not payload:
+            break
+
+        oldest_in_page: datetime | None = None
+        for raw in payload:
+            if not isinstance(raw, dict):
+                continue
+            created_at = _parse_dt(raw.get("created_date"))
+            if oldest_in_page is None or created_at < oldest_in_page:
+                oldest_in_page = created_at
+            amount = float(raw.get("amount", 0) or 0)
+            if amount <= 0:
+                continue
+            if created_at < season.starts or created_at > season.ends:
+                continue
+            entries.append(
+                RewardEntry(
+                    id=str(raw.get("id")),
+                    player=str(raw.get("player", username)),
+                    token=str(raw.get("token", token_type)),
+                    amount=amount,
+                    type=str(raw.get("type", "")),
+                    created_date=created_at,
+                    username=username,
+                    raw=raw,
+                )
+            )
+
+        # If we reached before the season starts or got a short page, stop.
+        if oldest_in_page and oldest_in_page < season.starts:
+            break
+        if len(payload) < page_limit:
+            break
+        offset += page_limit
+
+    entries.sort(key=lambda r: r.created_date, reverse=True)
     return entries
 
 

@@ -39,20 +39,11 @@ load_dotenv()
 def _get_supabase_credentials() -> tuple[str, str] | None:
     """Return (url, key) using env first, then Streamlit secrets."""
     url = os.getenv("SUPABASE_URL")
-    key = (
-        os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        or os.getenv("SUPABASE_SERVICE_KEY")
-        or os.getenv("SUPABASE_ANON_KEY")
-    )
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
     if (not url or not key) and st is not None:
         secrets = st.secrets
         url = url or secrets.get("SUPABASE_URL")
-        key = (
-            key
-            or secrets.get("SUPABASE_SERVICE_ROLE_KEY")
-            or secrets.get("SUPABASE_SERVICE_KEY")
-            or secrets.get("SUPABASE_ANON_KEY")
-        )
+        key = key or secrets.get("SUPABASE_SERVICE_ROLE_KEY") or secrets.get("SUPABASE_SERVICE_KEY") or secrets.get("SUPABASE_ANON_KEY")
     if not url or not key:
         return None
     return url, key
@@ -78,7 +69,7 @@ def get_last_supabase_error() -> str | None:
     return _last_error
 
 
-def _postgrest_upsert(url: str, key: str, table: str, rows) -> None:
+def _postgrest_upsert(url: str, key: str, table: str, rows) -> bool:
     global _last_error
     headers = {
         "apikey": key,
@@ -89,6 +80,9 @@ def _postgrest_upsert(url: str, key: str, table: str, rows) -> None:
     resp = requests.post(f"{url}/rest/v1/{table}", json=rows, headers=headers, timeout=15)
     if resp.status_code >= 300:
         _last_error = f"Supabase upsert failed: {resp.status_code} {resp.text}"
+        return False
+    _last_error = None
+    return True
 
 
 def _build_auth_headers(key: str, content_type: str | None = None) -> dict[str, str]:
@@ -132,6 +126,22 @@ def _supabase_fetch(path: str, params: dict[str, object] | None = None) -> list[
     return data
 
 
+def fetch_season_snapshot(username: str, season_id: int) -> dict[str, object] | None:
+    """Fetch a single snapshot row for (username, season_id)."""
+    normalized = _normalize_username(username)
+    rows = _supabase_fetch(
+        f"{SEASON_TABLE}",
+        params={
+            "username": f"eq.{normalized}",
+            "season_id": f"eq.{season_id}",
+            "limit": 1,
+        },
+    )
+    if rows:
+        return rows[0]
+    return None
+
+
 def _parse_datetime(value: object) -> datetime | None:
     if not value:
         return None
@@ -143,6 +153,22 @@ def _parse_datetime(value: object) -> datetime | None:
         except Exception:
             return None
     return None
+
+
+def _normalize_username(username: str) -> str:
+    return str(username or "").strip().lower()
+
+
+def _sum_token_dict(tokens: object | None) -> float:
+    if not isinstance(tokens, dict):
+        return 0.0
+    total = 0.0
+    for value in tokens.values():
+        try:
+            total += float(value)
+        except Exception:
+            continue
+    return total
 
 
 def _http_get_json(url: str, params: dict[str, object] | None = None) -> object | None:
@@ -176,12 +202,7 @@ def _parse_prizes(player: dict[str, object], payouts: list) -> tuple[list | None
     prize_tokens: list[dict[str, object]] = []
     prize_text_parts: list[str] = []
 
-    direct_prize = (
-        player.get("ext_prize_info")
-        or player.get("prizes")
-        or player.get("prize")
-        or player.get("player_prize")
-    )
+    direct_prize = player.get("ext_prize_info") or player.get("prizes") or player.get("prize") or player.get("player_prize")
     if isinstance(direct_prize, list):
         for item in direct_prize:
             norm = _normalize_prize_item(item)
@@ -287,19 +308,10 @@ def _ingest_organizer_tournaments(
             continue
 
         status = detail_resp.get("status") or detail_resp.get("current_round") or item.get("status")
-        entrants = (
-            detail_resp.get("players_registered")
-            or detail_resp.get("num_players")
-            or item.get("players_registered")
-        )
+        entrants = detail_resp.get("players_registered") or detail_resp.get("num_players") or item.get("players_registered")
         detail_data = detail_resp.get("data") if isinstance(detail_resp.get("data"), dict) else {}
         item_data = item.get("data") if isinstance(item.get("data"), dict) else {}
-        payouts = (
-            detail_data.get("prizes", {}).get("payouts")
-            or detail_resp.get("prizes", {}).get("payouts")
-            or item_data.get("prizes", {}).get("payouts")
-            or []
-        )
+        payouts = detail_data.get("prizes", {}).get("payouts") or detail_resp.get("prizes", {}).get("payouts") or item_data.get("prizes", {}).get("payouts") or []
         allowed_cards = detail_data.get("allowed_cards") or item_data.get("allowed_cards")
 
         event_rows.append(
@@ -447,6 +459,50 @@ def _to_iso(dt: datetime | str | None) -> str | None:
     return dt.isoformat()
 
 
+def _token_total_from_record(record: dict[str, object] | None) -> float:
+    if not record:
+        return 0.0
+    return _sum_token_dict(record.get("ranked_tokens")) + _sum_token_dict(record.get("brawl_tokens")) + _sum_token_dict(record.get("tournament_tokens"))
+
+
+def _compare_ints(new_val: int | None, old_val: int | None) -> int:
+    new_int = -1 if new_val is None else int(new_val)
+    old_int = -1 if old_val is None else int(old_val)
+    return (new_int > old_int) - (new_int < old_int)
+
+
+def _compare_datetimes(new_dt: datetime | str | None, old_dt: datetime | str | None) -> int:
+    new_parsed = _parse_datetime(new_dt) or datetime.min.replace(tzinfo=UTC)
+    old_parsed = _parse_datetime(old_dt) or datetime.min.replace(tzinfo=UTC)
+    return (new_parsed > old_parsed) - (new_parsed < old_parsed)
+
+
+def _is_new_snapshot_better(new_meta: dict[str, object], existing: dict[str, object] | None) -> bool:
+    if not existing:
+        return True
+
+    comparisons = [
+        _compare_ints(new_meta.get("snapshot_reward_count"), existing.get("snapshot_reward_count")),
+        _compare_ints(new_meta.get("snapshot_tournament_count"), existing.get("snapshot_tournament_count")),
+        _compare_datetimes(new_meta.get("snapshot_last_reward_at"), existing.get("snapshot_last_reward_at")),
+        _compare_datetimes(new_meta.get("snapshot_last_tournament_at"), existing.get("snapshot_last_tournament_at")),
+        _compare_datetimes(new_meta.get("snapshot_captured_at"), existing.get("snapshot_captured_at")),
+    ]
+
+    for cmp_result in comparisons:
+        if cmp_result > 0:
+            return True
+        if cmp_result < 0:
+            return False
+
+    new_tokens_total = float(new_meta.get("token_total") or 0.0)
+    existing_tokens_total = _token_total_from_record(existing)
+    cmp_tokens = (new_tokens_total > existing_tokens_total) - (new_tokens_total < existing_tokens_total)
+    if cmp_tokens > 0:
+        return True
+    return False
+
+
 def upsert_season_totals(
     season: SeasonWindow,
     username: str,
@@ -480,9 +536,77 @@ def upsert_season_totals(
     _postgrest_upsert(url, key, table, payload)
 
 
-def upsert_tournament_logs(
-    tournaments: Iterable[TournamentResult], username: str, table: str = TOURNAMENT_TABLE
-) -> None:
+def upsert_season_snapshot_if_better(
+    season: SeasonWindow,
+    username: str,
+    totals: AggregatedTotals,
+    scholar_pct: float,
+    payout_currency: str,
+    reward_count: int,
+    tournament_count: int,
+    last_reward_at: datetime | None,
+    last_tournament_at: datetime | None,
+    table: str = SEASON_TABLE,
+) -> tuple[bool, str]:
+    """
+    Upsert a season snapshot only if coverage improves over any existing row.
+    Returns (updated, message).
+    """
+    creds = get_supabase_client()
+    if creds is None:
+        return False, "Supabase is not configured"
+
+    normalized_username = _normalize_username(username)
+    existing = fetch_season_snapshot(normalized_username, season.id)
+
+    token_total = _sum_token_dict(totals.ranked.token_amounts) + _sum_token_dict(totals.brawl.token_amounts) + _sum_token_dict(totals.tournament.token_amounts)
+    captured_at = datetime.now(tz=UTC)
+    new_meta = {
+        "snapshot_reward_count": reward_count,
+        "snapshot_tournament_count": tournament_count,
+        "snapshot_last_reward_at": last_reward_at,
+        "snapshot_last_tournament_at": last_tournament_at,
+        "snapshot_captured_at": captured_at,
+        "token_total": token_total,
+    }
+
+    if not _is_new_snapshot_better(new_meta, existing):
+        return False, "Kept existing snapshot (coverage not improved)"
+
+    payload = {
+        "season_id": season.id,
+        "season_start": season.starts.isoformat(),
+        "season_end": season.ends.isoformat(),
+        "username": normalized_username,
+        "ranked_tokens": totals.ranked.token_amounts,
+        "brawl_tokens": totals.brawl.token_amounts,
+        "tournament_tokens": totals.tournament.token_amounts,
+        "entry_fees_tokens": totals.entry_fees.token_amounts,
+        "ranked_usd": totals.ranked.usd,
+        "brawl_usd": totals.brawl.usd,
+        "tournament_usd": totals.tournament.usd,
+        "entry_fees_usd": totals.entry_fees.usd,
+        "overall_usd": totals.overall.usd,
+        "scholar_pct": scholar_pct,
+        "payout_currency": payout_currency,
+        "snapshot_reward_count": reward_count,
+        "snapshot_tournament_count": tournament_count,
+        "snapshot_last_reward_at": _to_iso(last_reward_at),
+        "snapshot_last_tournament_at": _to_iso(last_tournament_at),
+        "snapshot_captured_at": _to_iso(captured_at),
+    }
+
+    url, key = creds
+    success = _postgrest_upsert(url, key, table, payload)
+    if not success:
+        return False, get_last_supabase_error() or "Supabase upsert failed"
+
+    # Differentiate update vs insert by checking previous presence.
+    action = "Inserted" if existing is None else "Updated"
+    return True, f"{action} season snapshot for {normalized_username} season {season.id}"
+
+
+def upsert_tournament_logs(tournaments: Iterable[TournamentResult], username: str, table: str = TOURNAMENT_TABLE) -> None:
     creds = get_supabase_client()
     if creds is None:
         return
@@ -626,9 +750,7 @@ def fetch_point_schemes() -> list[dict[str, object]]:
     return _supabase_fetch("point_schemes", params)
 
 
-def fetch_tournament_leaderboard_totals_supabase(
-    organizer: str, scheme: str = "balanced"
-) -> list[dict[str, object]]:
+def fetch_tournament_leaderboard_totals_supabase(organizer: str, scheme: str = "balanced") -> list[dict[str, object]]:
     """
     Aggregated series leaderboard per organizer using the points views.
     """
@@ -654,17 +776,13 @@ def fetch_season_history(username: str) -> list[dict[str, object]]:
         return []
 
     url, key = creds
-    endpoint = (
-        f"{url}/rest/v1/{SEASON_TABLE}?username=eq.{username}&order=season_id.desc"
-    )
+    endpoint = f"{url}/rest/v1/{SEASON_TABLE}?username=eq.{username}&order=season_id.desc"
     logger.debug("Fetching season history: %s headers=apikey", endpoint)
     headers = _build_auth_headers(key)
     resp = requests.get(endpoint, headers=headers, timeout=15)
     if resp.status_code >= 300:
         global _last_error
-        _last_error = (
-            f"Supabase fetch failed: {resp.status_code} {resp.text[:2048]}"
-        )
+        _last_error = f"Supabase fetch failed: {resp.status_code} {resp.text[:2048]}"
         logger.error("Supabase fetch failed: %s %s", resp.status_code, resp.text)
         return []
     data = resp.json() or []
