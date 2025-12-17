@@ -42,6 +42,7 @@ class TournamentResult:
     name: str
     start_date: datetime | None
     entry_fee: TokenAmount | None
+    username: str | None = None
     rewards: list[TokenAmount] = field(default_factory=list)
     finish: int | None = None
     raw: dict[str, object] = field(default_factory=dict)
@@ -65,6 +66,7 @@ class RewardEntry:
     amount: float
     type: str
     created_date: datetime
+    username: str | None = None
     raw: dict[str, object] = field(default_factory=dict)
 
 

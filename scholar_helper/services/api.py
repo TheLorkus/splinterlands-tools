@@ -100,9 +100,7 @@ def fetch_hosted_tournaments(username: str) -> list[HostedTournament]:
     return hosted
 
 
-def fetch_tournament_leaderboard(
-    tournament_id: str, username: str, payouts: list[dict[str, object]] | None = None
-) -> list[dict[str, object]]:
+def fetch_tournament_leaderboard(tournament_id: str, username: str, payouts: list[dict[str, object]] | None = None) -> list[dict[str, object]]:
     """Return player finishes and prize info for a tournament id."""
     detail = _fetch_tournament_detail(tournament_id, username)
     players = detail.get("players") if isinstance(detail, dict) else None
@@ -119,12 +117,7 @@ def fetch_tournament_leaderboard(
             finish_int = int(finish) if finish is not None else None
         except Exception:
             finish_int = None
-        prize_payload = (
-            player.get("ext_prize_info")
-            or player.get("prizes")
-            or player.get("prize")
-            or player.get("player_prize")
-        )
+        prize_payload = player.get("ext_prize_info") or player.get("prizes") or player.get("prize") or player.get("player_prize")
         prize_tokens = _parse_prize_payload(prize_payload)
         prize_texts: list[str] = []
         if prize_tokens:
@@ -227,6 +220,7 @@ def fetch_tournaments(username: str, limit: int | None = 200) -> list[Tournament
                 name=str(raw.get("name", "Tournament")),
                 start_date=start_dt,
                 entry_fee=entry_fee,
+                username=username,
                 rewards=rewards,
                 finish=finish,
                 raw=combined_raw,
@@ -238,13 +232,8 @@ def fetch_tournaments(username: str, limit: int | None = 200) -> list[Tournament
     return results
 
 
-def fetch_unclaimed_balance_history(
-    username: str, token_type: str = "SPS", offset: int = 0, limit: int = 1000
-) -> list[RewardEntry]:
-    url = (
-        "https://api.splinterlands.com/players/unclaimed_balance_history"
-        f"?username={username}&token_type={token_type}&offset={offset}&limit={limit}"
-    )
+def fetch_unclaimed_balance_history(username: str, token_type: str = "SPS", offset: int = 0, limit: int = 1000) -> list[RewardEntry]:
+    url = "https://api.splinterlands.com/players/unclaimed_balance_history" f"?username={username}&token_type={token_type}&offset={offset}&limit={limit}"
     resp = _client.get(url)
     resp.raise_for_status()
     payload = resp.json() or []
@@ -266,6 +255,7 @@ def fetch_unclaimed_balance_history(
                 amount=amount,
                 type=str(raw.get("type", "")),
                 created_date=created_at,
+                username=username,
                 raw=raw,
             )
         )
@@ -448,23 +438,13 @@ def _extract_rewards_for_player(detail_payload: dict[str, object] | None, userna
                 continue
             if str(player.get("player", "")).lower() != target:
                 continue
-            rewards = _parse_prize_payload(
-                player.get("ext_prize_info")
-                or player.get("prize")
-                or player.get("prizes")
-                or player.get("player_prize")
-            )
+            rewards = _parse_prize_payload(player.get("ext_prize_info") or player.get("prize") or player.get("prizes") or player.get("player_prize"))
             if rewards:
                 return rewards
 
     current_player = detail_payload.get("current_player")
     if isinstance(current_player, dict) and str(current_player.get("player", "")).lower() == target:
-        rewards = _parse_prize_payload(
-            current_player.get("ext_prize_info")
-            or current_player.get("prize")
-            or current_player.get("prizes")
-            or current_player.get("player_prize")
-        )
+        rewards = _parse_prize_payload(current_player.get("ext_prize_info") or current_player.get("prize") or current_player.get("prizes") or current_player.get("player_prize"))
         if rewards:
             return rewards
 
