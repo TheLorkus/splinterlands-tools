@@ -37,10 +37,12 @@ serve(async (req) => {
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) {
+  const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization");
+  const tokenMatch = authHeader ? authHeader.match(/^Bearer\s+(.+)$/i) : null;
+  const authToken = tokenMatch?.[1]?.trim() || req.headers.get("apikey")?.trim();
+  if (!supabaseUrl || !authToken) {
     return new Response(
-      JSON.stringify({ error: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required" }),
+      JSON.stringify({ error: "SUPABASE_URL and Authorization header are required" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }
@@ -73,8 +75,8 @@ serve(async (req) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: authToken,
+        Authorization: `Bearer ${authToken}`,
       },
       body: JSON.stringify(payload),
     });

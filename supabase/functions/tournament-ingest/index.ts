@@ -133,6 +133,18 @@ function buildQuery(params: Record<string, string>): string {
   return search.toString();
 }
 
+function extractAuthToken(req: Request): string | null {
+  const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization");
+  if (authHeader) {
+    const match = authHeader.match(/^Bearer\\s+(.+)$/i);
+    if (match) {
+      return match[1].trim();
+    }
+  }
+  const apiKey = req.headers.get("apikey");
+  return apiKey ? apiKey.trim() : null;
+}
+
 async function fetchJson(url: string, params?: Record<string, string>): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -208,10 +220,10 @@ serve(async (req) => {
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) {
+  const authToken = extractAuthToken(req);
+  if (!supabaseUrl || !authToken) {
     return new Response(
-      JSON.stringify({ error: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required" }),
+      JSON.stringify({ error: "SUPABASE_URL and Authorization header are required" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }
@@ -227,7 +239,7 @@ serve(async (req) => {
     ? Math.max(1, maxTournamentsRaw)
     : DEFAULT_MAX_TOURNAMENTS;
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  const supabase = createClient(supabaseUrl, authToken, {
     auth: { persistSession: false },
   });
 

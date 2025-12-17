@@ -27,8 +27,8 @@
 ## Supabase configuration and schema
 - Config sources: `.env` and Streamlit secrets (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, optional `SUPABASE_ANON_KEY`). `SUPABASE_SERVICE_KEY` is a legacy alias; prefer `SUPABASE_SERVICE_ROLE_KEY` in new setups (see `scholar_helper/services/storage.py`).
 - Edge functions:
-  - `supabase/functions/update-season-schedule` (calls Supabase Scheduler). Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, optional `SYNC_SEASON_ENDPOINT`, `SYNC_SCHEDULE_NAME`, `SYNC_FUNCTION_NAME`.
-  - `supabase/functions/tournament-ingest` (Splinterlands ingest + upsert). Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+  - `supabase/functions/update-season-schedule` (calls Supabase Scheduler). Env: `SUPABASE_URL`, optional `SYNC_SEASON_ENDPOINT`, `SYNC_SCHEDULE_NAME`, `SYNC_FUNCTION_NAME`. Uses the incoming `Authorization` header for Supabase auth.
+  - `supabase/functions/tournament-ingest` (Splinterlands ingest + upsert). Env: `SUPABASE_URL`. Uses the incoming `Authorization` header for Supabase auth.
   - `season-sync` Edge function is referenced in migrations/README but not present in `supabase/functions`.
 - Extensions and jobs (migrations): `pg_net`, `pg_cron`, `http`; cron jobs `season-sync-hourly`, `refresh-season-sync-cron`, and `tournament-ingest-frequent` (*/10 minutes, window set to 3 days).
 - Tables/views/functions (from migrations and code usage):
