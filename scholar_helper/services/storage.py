@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import logging
-from typing import Dict, Iterable, Optional, Sequence
+from typing import Dict, Iterable, Optional, Sequence, TYPE_CHECKING
 from datetime import datetime, timezone, timedelta
 
 from dotenv import load_dotenv
@@ -12,7 +12,8 @@ try:
 except Exception:  # Streamlit not available in pure CLI runs (e.g., tests)
     st = None
 
-from scholar_helper.models import AggregatedTotals, SeasonWindow, TournamentResult
+if TYPE_CHECKING:
+    from scholar_helper.models import AggregatedTotals, SeasonWindow, TournamentResult
 
 SEASON_TABLE = "season_rewards"
 TOURNAMENT_TABLE = "tournament_logs"
