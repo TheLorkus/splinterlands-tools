@@ -5,7 +5,7 @@
 - UI pages:
   - `pages/01_Home.py`: hub with page links.
   - `pages/10_Brawl_Dashboard.py`: Brawl Assistant (guild history, player stats, trend charts).
-  - `pages/20_Rewards_Tracker.py`: Rewards Tracker with optional Scholar mode, summaries, tournaments, and history.
+  - `pages/20_Rewards_Tracker.py`: Rewards Tracker with optional Scholar mode, summaries, tournaments, and history. Snapshot saves now reuse the same fetched reward/tournament rows shown in the UI (no refetch drift), and the history tab re-values token buckets with current prices when available.
   - `pages/30_Tournament_Series.py`: Series leaderboard + tournament configurator, Supabase ingest trigger, embeds `Tournament_Series.md`.
   - `pages/40_SPS_Analytics.py`: placeholder page.
 - Modules:
@@ -20,7 +20,7 @@
 
 ## Data flow and caching
 - Brawl Dashboard: UI -> `features/brawl/service.py` -> `scholar_helper/services/brawl_dashboard.py` -> Splinterlands API (`/guilds/brawl_records`, `/tournaments/find_brawl`, `/guilds/list`). Cached via `st.cache_data` (TTL 300s for brawl calls, 86400s for guild list).
-- Rewards Tracker: UI -> `features/scholar/service.py` -> `scholar_helper/services/api.py` -> Splinterlands API (`/settings`, `/season`, `/prices`, `/players/unclaimed_balance_history`, `/tournaments/completed`, `/tournaments/find`). Cached via `st.cache_data` (TTL 300s) plus in-memory `cachetools.TTLCache` (TTL 300s) inside the API module.
+- Rewards Tracker: UI -> `features/scholar/service.py` -> `scholar_helper/services/api.py` -> Splinterlands API (`/settings`, `/season`, `/prices`, `/players/unclaimed_balance_history`, `/tournaments/completed`, `/tournaments/find`). Cached via `st.cache_data` (TTL 300s) plus in-memory `cachetools.TTLCache` (TTL 300s) inside the API module. Snapshot saves use the already-fetched rows per user to avoid stale writes; history rows are displayed with USD re-derived from stored token buckets when price data is available.
 - Tournament Series: UI -> `series/*` -> `scholar_helper/services/storage.py` -> Supabase tables/views (`tournament_events`, `tournament_results`, `tournament_result_points`, `tournament_leaderboard_totals`). Falls back to live Splinterlands API via `fetch_hosted_tournaments` + `fetch_tournament_leaderboard` when Supabase has no rows.
 - Supabase persistence: CLI/scripts (`scripts/season_sync.py`, `scholar_helper/cli/sync_supabase.py`, `scripts/import_season_history.py`) and the UI history tab read/write via `storage.py` (PostgREST). Tournament ingest is handled by the `tournament-ingest` Edge Function (scheduled via cron + manual UI trigger).
 
