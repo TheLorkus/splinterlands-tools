@@ -120,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
             len(tournament_rows),
             last_reward_at,
             last_tournament_at,
+            True,
         )
         if updated:
             logger.info("Snapshot saved: %s", message)

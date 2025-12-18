@@ -546,6 +546,7 @@ def upsert_season_snapshot_if_better(
     tournament_count: int,
     last_reward_at: datetime | None,
     last_tournament_at: datetime | None,
+    force_update: bool = False,
     table: str = SEASON_TABLE,
 ) -> tuple[bool, str]:
     """
@@ -570,7 +571,7 @@ def upsert_season_snapshot_if_better(
         "token_total": token_total,
     }
 
-    if not _is_new_snapshot_better(new_meta, existing):
+    if not force_update and not _is_new_snapshot_better(new_meta, existing):
         return False, "Kept existing snapshot (coverage not improved)"
 
     payload = {

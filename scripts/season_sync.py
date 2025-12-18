@@ -69,6 +69,7 @@ def _sync_for_season(
                 len(tournaments),
                 last_reward_at,
                 last_tournament_at,
+                True,
             )
             if updated:
                 logging.info("Snapshot saved: %s", message)

@@ -337,6 +337,7 @@ def render_page():
                                 len(season_tournaments),
                                 last_reward_at,
                                 last_tournament_at,
+                                True,
                             )
                             results.append((updated, message))
                         except Exception as exc:
