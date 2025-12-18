@@ -70,7 +70,15 @@ def get_last_supabase_error() -> str | None:
     return _last_error
 
 
-def _postgrest_upsert(url: str, key: str, table: str, rows, timeout: float = 30.0, retries: int = 2) -> bool:
+def _postgrest_upsert(
+    url: str,
+    key: str,
+    table: str,
+    rows,
+    timeout: float = 30.0,
+    retries: int = 2,
+    on_conflict: str | None = None,
+) -> bool:
     global _last_error
     headers = {
         "apikey": key,
@@ -78,18 +86,21 @@ def _postgrest_upsert(url: str, key: str, table: str, rows, timeout: float = 30.
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,return=minimal",
     }
+    params = {"on_conflict": on_conflict} if on_conflict else None
     attempt = 0
     while attempt <= retries:
         try:
-            resp = requests.post(f"{url}/rest/v1/{table}", json=rows, headers=headers, timeout=timeout)
+            resp = requests.post(f"{url}/rest/v1/{table}", json=rows, headers=headers, params=params, timeout=timeout)
             if resp.status_code >= 300:
                 _last_error = f"Supabase upsert failed: {resp.status_code} {resp.text}"
+                logger.error(_last_error)
                 return False
             _last_error = None
             return True
         except Exception as exc:
             attempt += 1
             _last_error = f"Supabase upsert failed (attempt {attempt}): {exc}"
+            logger.error(_last_error)
             if attempt > retries:
                 _last_error = f"Supabase upsert failed: {exc}"
                 return False
@@ -593,11 +604,13 @@ def upsert_season_totals(
     if creds is None:
         return
 
+    normalized_username = _normalize_username(username)
+    now_iso = datetime.now(tz=UTC).isoformat()
     payload = {
         "season_id": season.id,
         "season_start": season.starts.isoformat(),
         "season_end": season.ends.isoformat(),
-        "username": username,
+        "username": normalized_username,
         "ranked_tokens": totals.ranked.token_amounts,
         "brawl_tokens": totals.brawl.token_amounts,
         "tournament_tokens": totals.tournament.token_amounts,
@@ -609,9 +622,10 @@ def upsert_season_totals(
         "overall_usd": totals.overall.usd,
         "scholar_pct": scholar_pct,
         "payout_currency": payout_currency,
+        "updated_at": now_iso,
     }
     url, key = creds
-    _postgrest_upsert(url, key, table, payload)
+    _postgrest_upsert(url, key, table, payload, on_conflict="username,season_id")
 
 
 def upsert_season_snapshot_if_better(
@@ -673,10 +687,11 @@ def upsert_season_snapshot_if_better(
         "snapshot_last_reward_at": _to_iso(last_reward_at),
         "snapshot_last_tournament_at": _to_iso(last_tournament_at),
         "snapshot_captured_at": _to_iso(captured_at),
+        "updated_at": _to_iso(captured_at),
     }
 
     url, key = creds
-    success = _postgrest_upsert(url, key, table, payload)
+    success = _postgrest_upsert(url, key, table, payload, on_conflict="username,season_id")
     if not success:
         return False, get_last_supabase_error() or "Supabase upsert failed"
 
