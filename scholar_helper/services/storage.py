@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable, Sequence
+import time
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import requests
 from dotenv import load_dotenv
@@ -69,7 +70,7 @@ def get_last_supabase_error() -> str | None:
     return _last_error
 
 
-def _postgrest_upsert(url: str, key: str, table: str, rows) -> bool:
+def _postgrest_upsert(url: str, key: str, table: str, rows, timeout: float = 30.0, retries: int = 2) -> bool:
     global _last_error
     headers = {
         "apikey": key,
@@ -77,12 +78,23 @@ def _postgrest_upsert(url: str, key: str, table: str, rows) -> bool:
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,return=minimal",
     }
-    resp = requests.post(f"{url}/rest/v1/{table}", json=rows, headers=headers, timeout=15)
-    if resp.status_code >= 300:
-        _last_error = f"Supabase upsert failed: {resp.status_code} {resp.text}"
-        return False
-    _last_error = None
-    return True
+    attempt = 0
+    while attempt <= retries:
+        try:
+            resp = requests.post(f"{url}/rest/v1/{table}", json=rows, headers=headers, timeout=timeout)
+            if resp.status_code >= 300:
+                _last_error = f"Supabase upsert failed: {resp.status_code} {resp.text}"
+                return False
+            _last_error = None
+            return True
+        except Exception as exc:
+            attempt += 1
+            _last_error = f"Supabase upsert failed (attempt {attempt}): {exc}"
+            if attempt > retries:
+                _last_error = f"Supabase upsert failed: {exc}"
+                return False
+            time.sleep(1.5 * attempt)
+    return False
 
 
 def _build_auth_headers(key: str, content_type: str | None = None) -> dict[str, str]:
@@ -95,7 +107,14 @@ def _build_auth_headers(key: str, content_type: str | None = None) -> dict[str, 
     return headers
 
 
-def _supabase_fetch(path: str, params: dict[str, object] | None = None) -> list[dict[str, object]]:
+def _as_params(params: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Coerce query params into a plain dict for HTTP clients."""
+    if params is None:
+        return {}
+    return dict(params)
+
+
+def _supabase_fetch(path: str, params: Mapping[str, Any] | None = None) -> list[dict[str, object]]:
     """Lightweight GET helper for Supabase REST endpoints/views."""
     global _last_error
     creds = get_supabase_client()
@@ -107,7 +126,7 @@ def _supabase_fetch(path: str, params: dict[str, object] | None = None) -> list[
         resp = requests.get(
             f"{url}/rest/v1/{path}",
             headers=_build_auth_headers(key),
-            params=params or {},
+            params=_as_params(params),  # type: ignore[arg-type]
             timeout=20,
         )
     except Exception as exc:
@@ -152,6 +171,39 @@ def _parse_datetime(value: object) -> datetime | None:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
         except Exception:
             return None
+    if isinstance(value, int | float):
+        try:
+            return datetime.fromtimestamp(float(value), tz=UTC)
+        except Exception:
+            return None
+    return None
+
+
+def _coerce_int(value: object | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _coerce_float(value: object | None) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
     return None
 
 
@@ -171,9 +223,9 @@ def _sum_token_dict(tokens: object | None) -> float:
     return total
 
 
-def _http_get_json(url: str, params: dict[str, object] | None = None) -> object | None:
+def _http_get_json(url: str, params: Mapping[str, Any] | None = None) -> object | None:
     try:
-        resp = requests.get(url, params=params, timeout=FETCH_TIMEOUT_SECONDS)
+        resp = requests.get(url, params=_as_params(params), timeout=FETCH_TIMEOUT_SECONDS)  # type: ignore[arg-type]
         resp.raise_for_status()
         return resp.json()
     except Exception as exc:
@@ -221,26 +273,26 @@ def _parse_prizes(player: dict[str, object], payouts: list) -> tuple[list | None
     elif isinstance(direct_prize, str):
         prize_text_parts.append(direct_prize)
 
-    finish = player.get("finish")
-    try:
-        finish_int = int(finish) if finish is not None else None
-    except Exception:
-        finish_int = None
+    finish_val = player.get("finish")
+    finish_int = int(finish_val) if isinstance(finish_val, int | float | str) and str(finish_val).strip() != "" else None
 
     if isinstance(payouts, list) and finish_int is not None:
         for payout in payouts:
             if not isinstance(payout, dict):
                 continue
-            start_place = payout.get("start_place")
-            end_place = payout.get("end_place")
+            start_place_raw = payout.get("start_place")
+            end_place_raw = payout.get("end_place")
+            if not isinstance(start_place_raw, int | float | str) or not isinstance(end_place_raw, int | float | str):
+                continue
             try:
-                start_place = int(start_place)
-                end_place = int(end_place)
+                start_place = int(start_place_raw)
+                end_place = int(end_place_raw)
             except Exception:
                 continue
             if not (start_place <= finish_int <= end_place):
                 continue
-            items = payout.get("items") or []
+            items_raw = payout.get("items")
+            items = items_raw if isinstance(items_raw, list) else []
             for item in items:
                 norm = _normalize_prize_item(item)
                 if norm:
@@ -296,12 +348,14 @@ def _ingest_organizer_tournaments(
         if list_start and list_start < cutoff_ts:
             continue
 
-        detail_resp = _http_get_json(
+        detail_params: dict[str, object] = {"id": tid, "username": organizer}
+        detail_resp_raw = _http_get_json(
             f"{API_BASE}/tournaments/find",
-            params={"id": tid, "username": organizer},
+            params=detail_params,
         )
-        if not isinstance(detail_resp, dict):
+        if not isinstance(detail_resp_raw, dict):
             continue
+        detail_resp: dict[str, object] = detail_resp_raw
 
         start_date = _parse_datetime(detail_resp.get("start_date") or item.get("start_date"))
         if start_date and start_date < cutoff_ts:
@@ -309,10 +363,33 @@ def _ingest_organizer_tournaments(
 
         status = detail_resp.get("status") or detail_resp.get("current_round") or item.get("status")
         entrants = detail_resp.get("players_registered") or detail_resp.get("num_players") or item.get("players_registered")
-        detail_data = detail_resp.get("data") if isinstance(detail_resp.get("data"), dict) else {}
-        item_data = item.get("data") if isinstance(item.get("data"), dict) else {}
-        payouts = detail_data.get("prizes", {}).get("payouts") or detail_resp.get("prizes", {}).get("payouts") or item_data.get("prizes", {}).get("payouts") or []
-        allowed_cards = detail_data.get("allowed_cards") or item_data.get("allowed_cards")
+
+        detail_data_raw = detail_resp.get("data")
+        detail_data: dict[str, object] = detail_data_raw if isinstance(detail_data_raw, dict) else {}
+
+        item_data_raw = item.get("data")
+        item_data: dict[str, object] = item_data_raw if isinstance(item_data_raw, dict) else {}
+
+        detail_prizes_payload: object = detail_data.get("prizes")
+        detail_resp_prizes_payload: object = detail_resp.get("prizes")
+        item_prizes_payload: object = item_data.get("prizes")
+
+        detail_prizes: dict[str, object] | None = detail_prizes_payload if isinstance(detail_prizes_payload, dict) else None
+        detail_resp_prizes: dict[str, object] | None = detail_resp_prizes_payload if isinstance(detail_resp_prizes_payload, dict) else None
+        item_prizes: dict[str, object] | None = item_prizes_payload if isinstance(item_prizes_payload, dict) else None
+
+        payouts_payload: object | None = None
+        for source in (detail_prizes, detail_resp_prizes, item_prizes):
+            if source is None:
+                continue
+            candidate = source.get("payouts")
+            if candidate is not None:
+                payouts_payload = candidate
+                break
+        payouts: list[object] = payouts_payload if isinstance(payouts_payload, list) else []
+
+        allowed_cards_payload: object = detail_data.get("allowed_cards") if isinstance(detail_data.get("allowed_cards"), dict) else item_data.get("allowed_cards")
+        allowed_cards = allowed_cards_payload if isinstance(allowed_cards_payload, dict) else None
 
         event_rows.append(
             {
@@ -471,19 +548,19 @@ def _compare_ints(new_val: int | None, old_val: int | None) -> int:
     return (new_int > old_int) - (new_int < old_int)
 
 
-def _compare_datetimes(new_dt: datetime | str | None, old_dt: datetime | str | None) -> int:
+def _compare_datetimes(new_dt: object | None, old_dt: object | None) -> int:
     new_parsed = _parse_datetime(new_dt) or datetime.min.replace(tzinfo=UTC)
     old_parsed = _parse_datetime(old_dt) or datetime.min.replace(tzinfo=UTC)
     return (new_parsed > old_parsed) - (new_parsed < old_parsed)
 
 
-def _is_new_snapshot_better(new_meta: dict[str, object], existing: dict[str, object] | None) -> bool:
+def _is_new_snapshot_better(new_meta: Mapping[str, object], existing: dict[str, object] | None) -> bool:
     if not existing:
         return True
 
     comparisons = [
-        _compare_ints(new_meta.get("snapshot_reward_count"), existing.get("snapshot_reward_count")),
-        _compare_ints(new_meta.get("snapshot_tournament_count"), existing.get("snapshot_tournament_count")),
+        _compare_ints(_coerce_int(new_meta.get("snapshot_reward_count")), _coerce_int(existing.get("snapshot_reward_count"))),
+        _compare_ints(_coerce_int(new_meta.get("snapshot_tournament_count")), _coerce_int(existing.get("snapshot_tournament_count"))),
         _compare_datetimes(new_meta.get("snapshot_last_reward_at"), existing.get("snapshot_last_reward_at")),
         _compare_datetimes(new_meta.get("snapshot_last_tournament_at"), existing.get("snapshot_last_tournament_at")),
         _compare_datetimes(new_meta.get("snapshot_captured_at"), existing.get("snapshot_captured_at")),
@@ -495,7 +572,8 @@ def _is_new_snapshot_better(new_meta: dict[str, object], existing: dict[str, obj
         if cmp_result < 0:
             return False
 
-    new_tokens_total = float(new_meta.get("token_total") or 0.0)
+    new_tokens_total_val = _coerce_float(new_meta.get("token_total")) if isinstance(new_meta, Mapping) else None
+    new_tokens_total: float = new_tokens_total_val if new_tokens_total_val is not None else 0.0
     existing_tokens_total = _token_total_from_record(existing)
     cmp_tokens = (new_tokens_total > existing_tokens_total) - (new_tokens_total < existing_tokens_total)
     if cmp_tokens > 0:
