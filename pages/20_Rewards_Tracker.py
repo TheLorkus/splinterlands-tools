@@ -58,7 +58,7 @@ except ImportError:
         page_limit: int = 500,
     ) -> list[RewardEntry]:
         # Legacy helper does not understand seasons, so we fetch then filter.
-        rewards = _fetch_unclaimed_balance_history(username, token_type=token_type, page_limit=page_limit)
+        rewards = _fetch_unclaimed_balance_history(username, token_type=token_type, limit=page_limit)
         return [reward for reward in rewards if getattr(reward, "created_date", None) and season.starts <= reward.created_date <= season.ends]
 
 
