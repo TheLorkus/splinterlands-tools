@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import cast
+
 import streamlit as st
 
 from core.config import render_footer, setup_page
@@ -62,7 +65,15 @@ except ImportError:
         return [reward for reward in rewards if getattr(reward, "created_date", None) and season.starts <= reward.created_date <= season.ends]
 
 
-from scholar_helper.services.storage import fetch_season_snapshot, upsert_season_snapshot_if_better
+try:
+    from scholar_helper.services.storage import fetch_season_snapshot, upsert_season_snapshot_if_better
+except ImportError:
+    # Backwards compatibility for deployments without snapshot helpers.
+    fetch_season_snapshot = cast(Callable[[str, int], dict[str, object] | None], lambda username, season_id: None)
+    upsert_season_snapshot_if_better = cast(
+        Callable[..., tuple[bool, str]],
+        lambda *args, **kwargs: (False, "Snapshot helpers unavailable in this deployment"),
+    )
 
 setup_page("Rewards Tracker")
 
