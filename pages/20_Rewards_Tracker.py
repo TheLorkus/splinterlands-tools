@@ -174,6 +174,7 @@ def render_page():
 
         per_user_totals: list[tuple[str, AggregatedTotals]] = []
         reward_rows: list[RewardEntry] = []
+        reward_rows_by_user: dict[str, list[RewardEntry]] = {}
         tournament_rows: list[TournamentResult] = []
         user_tournaments_by_user: dict[str, list[TournamentResult]] = {}
         currency_choices: dict[int, str] = {}
@@ -198,6 +199,7 @@ def render_page():
                         tournament.username = username
 
                 reward_rows.extend(user_rewards)
+                reward_rows_by_user[username] = user_rewards
                 tournament_rows.extend(user_tournaments)
                 user_tournaments_by_user[username] = user_tournaments
 
@@ -321,8 +323,8 @@ def render_page():
                 for username in usernames:
                     with st.spinner(f"Saving snapshot for {username} (season {active_season.id})..."):
                         try:
-                            season_rewards = fetch_unclaimed_balance_history_for_season(username, active_season)
-                            season_tournaments = fetch_tournaments_for_season(username, active_season)
+                            season_rewards = reward_rows_by_user.get(username) or fetch_unclaimed_balance_history_for_season(username, active_season)
+                            season_tournaments = user_tournaments_by_user.get(username) or fetch_tournaments_for_season(username, active_season)
                             totals = aggregate_totals(active_season, season_rewards, season_tournaments, prices)
                             last_reward_at = max((r.created_date for r in season_rewards), default=None)
                             last_tournament_at = max((t.start_date for t in season_tournaments if t.start_date), default=None)
