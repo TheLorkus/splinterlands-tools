@@ -29,10 +29,39 @@ from features.scholar.service import (
     update_season_currency,
 )
 from scholar_helper.models import AggregatedTotals, CategoryTotals, RewardEntry, SeasonWindow, TournamentResult
-from scholar_helper.services.api import (
-    fetch_tournaments_for_season,
-    fetch_unclaimed_balance_history_for_season,
-)
+
+try:
+    from scholar_helper.services.api import (
+        fetch_tournaments_for_season,
+        fetch_unclaimed_balance_history_for_season,
+    )
+except ImportError:
+    # Backwards compatibility for environments without the season-scoped helpers.
+    # Older helpers have different signatures, so we wrap them to keep call sites stable.
+    from scholar_helper.services.api import fetch_tournaments as _fetch_tournaments
+    from scholar_helper.services.api import (
+        fetch_unclaimed_balance_history as _fetch_unclaimed_balance_history,
+    )
+
+    def fetch_tournaments_for_season(
+        username: str,
+        season: SeasonWindow,
+        limit: int | None = 1000,
+    ) -> list[TournamentResult]:
+        tournaments = _fetch_tournaments(username, limit=limit)
+        return filter_tournaments_for_season(tournaments, season)
+
+    def fetch_unclaimed_balance_history_for_season(
+        username: str,
+        season: SeasonWindow,
+        token_type: str = "SPS",
+        page_limit: int = 500,
+    ) -> list[RewardEntry]:
+        # Legacy helper does not understand seasons, so we fetch then filter.
+        rewards = _fetch_unclaimed_balance_history(username, token_type=token_type, page_limit=page_limit)
+        return [reward for reward in rewards if getattr(reward, "created_date", None) and season.starts <= reward.created_date <= season.ends]
+
+
 from scholar_helper.services.storage import fetch_season_snapshot, upsert_season_snapshot_if_better
 
 setup_page("Rewards Tracker")
