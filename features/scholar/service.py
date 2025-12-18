@@ -33,12 +33,15 @@ from scholar_helper.services.storage import (  # noqa: F401
 try:
     from scholar_helper.services.storage import fetch_season_history
 except ImportError:  # pragma: no cover - fallback for older deployments
+
     def fetch_season_history(username: str):
         return []
+
 
 try:
     from scholar_helper.services.storage import update_season_currency
 except ImportError:  # pragma: no cover - fallback for older deployments
+
     def update_season_currency(username: str, season_id: int, currency: str) -> bool:
         return False
 
@@ -209,10 +212,14 @@ def _parse_token_amounts(payload: object | None) -> dict[str, float]:
     return tokens
 
 
-def _category_totals_from_record(record: dict[str, object], prefix: str) -> CategoryTotals:
+def _category_totals_from_record(record: dict[str, object], prefix: str, prices: PriceQuotes | None = None) -> CategoryTotals:
     tokens = _parse_token_amounts(record.get(f"{prefix}_tokens"))
-    usd_value = _safe_float(record.get(f"{prefix}_usd"))
-    return CategoryTotals(token_amounts=tokens, usd=usd_value)
+    stored_usd = _safe_float(record.get(f"{prefix}_usd"))
+    if prices is not None:
+        derived_usd = sum(amount * (prices.get(token) or 0) for token, amount in tokens.items())
+        if tokens:
+            return CategoryTotals(token_amounts=tokens, usd=derived_usd)
+    return CategoryTotals(token_amounts=tokens, usd=stored_usd)
 
 
 def _merge_token_amounts(*parts: dict[str, float]) -> dict[str, float]:
@@ -223,11 +230,11 @@ def _merge_token_amounts(*parts: dict[str, float]) -> dict[str, float]:
     return dict(merged)
 
 
-def _aggregated_totals_from_record(record: dict[str, object]) -> AggregatedTotals:
-    ranked = _category_totals_from_record(record, "ranked")
-    brawl = _category_totals_from_record(record, "brawl")
-    tournament = _category_totals_from_record(record, "tournament")
-    entry_fees = _category_totals_from_record(record, "entry_fees")
+def _aggregated_totals_from_record(record: dict[str, object], prices: PriceQuotes | None = None) -> AggregatedTotals:
+    ranked = _category_totals_from_record(record, "ranked", prices)
+    brawl = _category_totals_from_record(record, "brawl", prices)
+    tournament = _category_totals_from_record(record, "tournament", prices)
+    entry_fees = _category_totals_from_record(record, "entry_fees", prices)
     # Overall tokens exclude entry fees for display.
     overall_tokens = _merge_token_amounts(
         ranked.token_amounts,
@@ -235,7 +242,9 @@ def _aggregated_totals_from_record(record: dict[str, object]) -> AggregatedTotal
         tournament.token_amounts,
     )
     overall_usd = _safe_float(record.get("overall_usd"))
-    if not overall_usd:
+    if prices is not None and overall_tokens:
+        overall_usd = sum(amount * (prices.get(token) or 0) for token, amount in overall_tokens.items())
+    elif not overall_usd:
         overall_usd = ranked.usd + brawl.usd + tournament.usd + entry_fees.usd
     overall = CategoryTotals(token_amounts=overall_tokens, usd=overall_usd)
     return AggregatedTotals(

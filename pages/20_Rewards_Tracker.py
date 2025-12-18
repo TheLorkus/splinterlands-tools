@@ -458,7 +458,7 @@ def render_page():
                 for _idx, record in enumerate(history_records_sorted):
                     season_label = record.get("season") or record.get("season_id") or "-"
                     scholar_pct = _record_scholar_pct(record)
-                    totals = _aggregated_totals_from_record(record)
+                    totals = _aggregated_totals_from_record(record, prices)
 
                     payout_currency = record.get("payout_currency")
                     scholar_payout_value = record.get("scholar_payout")
