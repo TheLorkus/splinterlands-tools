@@ -19,7 +19,7 @@
   - `supabase/*`: migrations + Edge function(s).
 
 ## Data flow and caching
-- Brawl Dashboard: UI -> `features/brawl/service.py` -> `scholar_helper/services/brawl_dashboard.py` -> Splinterlands API (`/guilds/brawl_records`, `/tournaments/find_brawl`, `/guilds/list`). Cached via `st.cache_data` (TTL 300s for brawl calls, 86400s for guild list).
+- Brawl Dashboard: UI -> `features/brawl/service.py` -> Supabase-first reads for tracked guilds (`tracked_guilds`, `brawl_cycles`, `brawl_player_cycle`, `brawl_rewards`) with fallback to live Splinterlands API (`/guilds/brawl_records`, `/tournaments/find_brawl`, `/guilds/list`). Cached via `st.cache_data` (TTL 300s for live brawl calls, 86400s for guild list). Manual refresh triggers ingestion via service-role key.
 - Rewards Tracker: UI -> `features/scholar/service.py` -> `scholar_helper/services/api.py` -> Splinterlands API (`/settings`, `/season`, `/prices`, `/players/unclaimed_balance_history`, `/tournaments/completed`, `/tournaments/find`). Cached via `st.cache_data` (TTL 300s) plus in-memory `cachetools.TTLCache` (TTL 300s) inside the API module. Snapshot saves use the already-fetched rows per user to avoid stale writes; history rows are displayed with USD re-derived from stored token buckets when price data is available.
 - Tournament Series: UI -> `series/*` -> `scholar_helper/services/storage.py` -> Supabase tables/views (`tournament_events`, `tournament_results`, `tournament_result_points`, `tournament_leaderboard_totals`). Falls back to live Splinterlands API via `fetch_hosted_tournaments` + `fetch_tournament_leaderboard` when Supabase has no rows.
 - Supabase persistence: CLI/scripts (`scripts/season_sync.py`, `scholar_helper/cli/sync_supabase.py`, `scripts/import_season_history.py`) and the UI history tab read/write via `storage.py` (PostgREST). Tournament ingest is handled by the `tournament-ingest` Edge Function (scheduled via cron + manual UI trigger).
@@ -46,14 +46,14 @@
   - CLI/scripts for season sync and CSV history import.
 - Stubbed/placeholder:
   - SPS Analytics page is a placeholder (`pages/40_SPS_Analytics.py`).
-  - Brawl persistence to Supabase is only planned (`planning_doc`).
+- Brawl persistence to Supabase for tracked guilds is implemented (cycles, player stats, reward annotations).
   - `season-sync` Edge function code not in repo (only referenced in migrations/README).
   - UI fallback in `pages/30_Tournament_Series.py` returns "Helper not available" if `scholar_helper` isn't importable.
 
 ## TODOs and known bugs (top items)
 (Only items documented in the repo are listed.)
 5. Entry fees are tracked but not subtracted from totals (`README.md`).
-6. Brawl data persistence/ingest/scheduling is only planned (`planning_doc`).
+6. Brawl ingest is manual only; no scheduler/cron is configured yet (`planning_doc`).
 7. SPS Analytics page is placeholder ("Coming soon") (`pages/40_SPS_Analytics.py`).
 
 

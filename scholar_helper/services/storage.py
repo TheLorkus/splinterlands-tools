@@ -50,6 +50,32 @@ def _get_supabase_credentials() -> tuple[str, str] | None:
     return url, key
 
 
+def get_supabase_anon_client() -> tuple[str, str] | None:
+    """Return (url, anon_key) for read-only Supabase access."""
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_ANON_KEY")
+    if (not url or not key) and st is not None:
+        secrets = st.secrets
+        url = url or secrets.get("SUPABASE_URL")
+        key = key or secrets.get("SUPABASE_ANON_KEY")
+    if not url or not key:
+        return None
+    return url, key
+
+
+def get_supabase_service_client() -> tuple[str, str] | None:
+    """Return (url, service_role_key) for write access."""
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY")
+    if (not url or not key) and st is not None:
+        secrets = st.secrets
+        url = url or secrets.get("SUPABASE_URL")
+        key = key or secrets.get("SUPABASE_SERVICE_ROLE_KEY") or secrets.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        return None
+    return url, key
+
+
 def get_supabase_client() -> tuple[str, str] | None:
     """
     Backwards-compatible helper used by the app code to check whether Supabase is configured.
@@ -133,6 +159,37 @@ def _supabase_fetch(path: str, params: Mapping[str, Any] | None = None) -> list[
         return []
 
     url, key = creds
+    try:
+        resp = requests.get(
+            f"{url}/rest/v1/{path}",
+            headers=_build_auth_headers(key),
+            params=_as_params(params),  # type: ignore[arg-type]
+            timeout=20,
+        )
+    except Exception as exc:
+        _last_error = f"Supabase fetch failed: {exc}"
+        logger.error(_last_error)
+        return []
+
+    if resp.status_code >= 300:
+        _last_error = f"Supabase fetch failed: {resp.status_code} {resp.text[:512]}"
+        logger.error(_last_error)
+        return []
+
+    data = resp.json() or []
+    if not isinstance(data, list):
+        return []
+    return data
+
+
+def _supabase_fetch_with_key(
+    url: str,
+    key: str,
+    path: str,
+    params: Mapping[str, Any] | None = None,
+) -> list[dict[str, object]]:
+    """GET helper for Supabase REST endpoints with explicit credentials."""
+    global _last_error
     try:
         resp = requests.get(
             f"{url}/rest/v1/{path}",
