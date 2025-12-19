@@ -101,12 +101,18 @@ def _format_ruleset(allowed_cards: dict | None) -> str:
 
 def _parse_date(value) -> datetime | None:
     if isinstance(value, datetime):
-        return value
+        dt = value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt
     if isinstance(value, date):
-        return datetime.combine(value, datetime.min.time())
+        return datetime.combine(value, datetime.min.time()).replace(tzinfo=UTC)
     if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            return dt
         except Exception:
             return None
     return None
@@ -188,9 +194,7 @@ def _calculate_points_for_finish(finish: int | None, scheme: dict) -> float | No
     return dnp_points
 
 
-def _fetch_tournaments_from_api(
-    organizer: str, since: datetime | None, until: datetime | None, limit: int
-) -> list[dict]:
+def _fetch_tournaments_from_api(organizer: str, since: datetime | None, until: datetime | None, limit: int) -> list[dict]:
     """Live fallback: pull hosted tournaments directly from the Splinterlands API."""
     try:
         hosted = fetch_hosted_tournaments(organizer)
@@ -292,9 +296,7 @@ def render_page(embed_mode: bool = False) -> None:
 
     configs = fetch_series_configs(username) if username else []
     configs = cast(list[dict[str, Any]], configs)
-    config_labels = ["(No saved config)"] + [
-        (cfg.get("name") or str(cfg.get("id"))) for cfg in configs if isinstance(cfg, dict)
-    ]
+    config_labels = ["(No saved config)"] + [(cfg.get("name") or str(cfg.get("id"))) for cfg in configs if isinstance(cfg, dict)]
     selected_config_label = st.selectbox("Series config (optional)", options=config_labels, index=0)
     selected_config = None
 
@@ -338,11 +340,7 @@ def render_page(embed_mode: bool = False) -> None:
 
     schemes = fetch_point_schemes()
     # Normalize backend payload into a map keyed strictly by slug strings.
-    scheme_map: dict[str, dict] = (
-        {str(s.get("slug")): s for s in schemes if isinstance(s, dict) and isinstance(s.get("slug"), str)}
-        if schemes
-        else {}
-    )
+    scheme_map: dict[str, dict] = {str(s.get("slug")): s for s in schemes if isinstance(s, dict) and isinstance(s.get("slug"), str)} if schemes else {}
     scheme_def = _resolve_scheme(scheme_map, str(scheme))
 
     limit = st.slider("Limit to last N events (0 = all after filters)", min_value=0, max_value=100, value=20)
@@ -380,44 +378,24 @@ def render_page(embed_mode: bool = False) -> None:
         return
     else:
         if source == "api":
-            st.info(
-                "Using live Splinterlands API data for this organizer (not yet stored). "
-                "Points are computed locally with the selected scheme."
-            )
+            st.info("Using live Splinterlands API data for this organizer (not yet stored). " "Points are computed locally with the selected scheme.")
         else:
             st.caption("Loaded tournaments from stored data.")
 
     # Optional ruleset filter derived from available allowed_cards.
-    ruleset_labels = sorted(
-        {
-            (
-                _format_ruleset(
-                    t.get("allowed_cards") if isinstance(t.get("allowed_cards"), dict) else None
-                )
-                or "-"
-            )
-            for t in tournaments
-        }
-    )
+    ruleset_labels = sorted({(_format_ruleset(t.get("allowed_cards") if isinstance(t.get("allowed_cards"), dict) else None) or "-") for t in tournaments})
     ruleset_labels = [label for label in ruleset_labels if label and label != "-"]
     ruleset_labels.insert(0, "All rulesets")
     selected_ruleset = st.selectbox("Ruleset filter (optional)", options=ruleset_labels, index=0)
     if selected_ruleset != "All rulesets":
-        tournaments = [
-            t
-            for t in tournaments
-            if _format_ruleset(t.get("allowed_cards") if isinstance(t.get("allowed_cards"), dict) else None)
-            == selected_ruleset
-        ]
+        tournaments = [t for t in tournaments if _format_ruleset(t.get("allowed_cards") if isinstance(t.get("allowed_cards"), dict) else None) == selected_ruleset]
         if not tournaments:
             st.info("No tournaments match that ruleset for the selected filters.")
             return
 
     if name_filter:
         name_lower = str(name_filter).lower()
-        tournaments = [
-            t for t in tournaments if name_lower in str(t.get("name") or t.get("tournament_id") or "").lower()
-        ]
+        tournaments = [t for t in tournaments if name_lower in str(t.get("name") or t.get("tournament_id") or "").lower()]
         if not tournaments:
             st.info("No tournaments match that name for the selected filters.")
             return
@@ -451,8 +429,8 @@ def render_page(embed_mode: bool = False) -> None:
             "Date": st.column_config.TextColumn(),
             "Tournament": st.column_config.TextColumn(),
             "Ruleset": st.column_config.TextColumn(),
-            },
-        )
+        },
+    )
 
     # Series leaderboard
     points_key = {
@@ -527,9 +505,7 @@ def render_page(embed_mode: bool = False) -> None:
         tournament_count = len(tournaments)
         tabs = st.tabs(["Leaderboard", "Point schemes"])
         with tabs[0]:
-            st.subheader(
-                f"{ruleset_title} Series Leaderboard hosted by {username} ({scheme_label} points) - aggregated over {tournament_count} tournaments"
-            )
+            st.subheader(f"{ruleset_title} Series Leaderboard hosted by {username} ({scheme_label} points) - aggregated over {tournament_count} tournaments")
             threshold = st.number_input(
                 f"Qualification threshold ({scheme_label} points)",
                 min_value=0.0,
@@ -542,9 +518,7 @@ def render_page(embed_mode: bool = False) -> None:
             if threshold > 0:
                 # Ticket marker for qualifiers (emoji color depends on platform; 🎫 is usually gold/yellow).
                 ticket_icon = "🎫"
-                df.loc[df["Points"] >= threshold, "Player"] = (
-                    ticket_icon + " " + df.loc[df["Points"] >= threshold, "Player"].astype(str)
-                )
+                df.loc[df["Points"] >= threshold, "Player"] = ticket_icon + " " + df.loc[df["Points"] >= threshold, "Player"].astype(str)
                 qualifying = df[df["Points"] >= threshold]
                 if not qualifying.empty:
                     cutoff_idx = qualifying.index[-1]
@@ -565,18 +539,11 @@ def render_page(embed_mode: bool = False) -> None:
 
                     def _highlight_cutoff(row):
                         if str(row.get("Player", "")).startswith("Cutoff at"):
-                            return [
-                                (
-                                    "background-color: #5f0000; color: #ffffff; font-weight: bold; "
-                                    "padding-top: 0px; padding-bottom: 0px; line-height: 0.7em; font-size: 0.9em;"
-                                )
-                            ] * len(row)
+                            return [("background-color: #5f0000; color: #ffffff; font-weight: bold; " "padding-top: 0px; padding-bottom: 0px; line-height: 0.7em; font-size: 0.9em;")] * len(row)
                         return [""] * len(row)
 
                     styler = df.style.apply(_highlight_cutoff, axis=1)
-                    st.caption(
-                        f"Red bar marks cutoff at {threshold:.0f} points ({len(qualifying)} qualified)."
-                    )
+                    st.caption(f"Red bar marks cutoff at {threshold:.0f} points ({len(qualifying)} qualified).")
                 else:
                     st.caption(f"No entries meet the {threshold:.0f}-point threshold.")
             st.dataframe(
@@ -600,9 +567,7 @@ def render_page(embed_mode: bool = False) -> None:
             else:
                 for scheme_obj in schemes_for_tab:
                     st.markdown(f"**{scheme_obj.get('label') or scheme_obj.get('slug')}** ({scheme_obj.get('mode')})")
-                    st.caption(
-                        f"Base points: {scheme_obj.get('base_points')}, DNP points: {scheme_obj.get('dnp_points')}"
-                    )
+                    st.caption(f"Base points: {scheme_obj.get('base_points')}, DNP points: {scheme_obj.get('dnp_points')}")
                     rows = _render_scheme_rules(scheme_obj)
                     st.dataframe(
                         rows,

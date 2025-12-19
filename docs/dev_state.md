@@ -52,16 +52,10 @@
 
 ## TODOs and known bugs (top items)
 (Only items documented in the repo are listed.)
-1. Missing reward types/tokens not returned by the price feed can be excluded from totals (`project_summary`).
-2. Payout table requires manual refresh for new usernames; no batching/scheduling (`project_summary`).
-3. Persistence is gated behind Supabase credentials; no local fallback store (`project_summary`).
-4. Historical imports require manual CSVs + service-role access (`project_summary`, `README.md`).
 5. Entry fees are tracked but not subtracted from totals (`README.md`).
 6. Brawl data persistence/ingest/scheduling is only planned (`planning_doc`).
 7. SPS Analytics page is placeholder ("Coming soon") (`pages/40_SPS_Analytics.py`).
-8. `season-sync` Edge function implementation is not in repo (only referenced) (`README.md`, `supabase/migrations/*`).
-9. No migrations create `season_rewards` or `tournament_logs` tables; only alters/usages exist in repo (migrations + `scholar_helper/services/storage.py`).
-10. README mentions uploading historical JSON, but no UI uploader is present; only the CSV import script exists (`README.md`, `pages/*`, `scripts/import_season_history.py`).
+
 
 ## Edge Function deployment (local CLI)
 1. Install + login: `supabase login`
