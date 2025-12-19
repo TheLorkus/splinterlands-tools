@@ -113,9 +113,12 @@ def cmd_list_cards(_: argparse.Namespace) -> int:
 
 def cmd_set(args: argparse.Namespace) -> int:
     brawl_id = str(args.brawl_id).strip()
+    guild_id = str(args.guild_id).strip()
     player = _normalize_player(str(args.player))
     if not brawl_id:
         raise SystemExit("--brawl-id is required")
+    if not guild_id:
+        raise SystemExit("--guild-id is required")
     if not player:
         raise SystemExit("--player is required")
 
@@ -127,6 +130,7 @@ def cmd_set(args: argparse.Namespace) -> int:
 
     payload: dict[str, Any] = {
         "brawl_id": brawl_id,
+        "guild_id": guild_id,
         "player": player,
         "card_text": card_name,
         "updated_at": _now_iso(),
@@ -146,14 +150,18 @@ def cmd_set(args: argparse.Namespace) -> int:
 
 def cmd_clear(args: argparse.Namespace) -> int:
     brawl_id = str(args.brawl_id).strip()
+    guild_id = str(args.guild_id).strip()
     player = _normalize_player(str(args.player))
     if not brawl_id:
         raise SystemExit("--brawl-id is required")
+    if not guild_id:
+        raise SystemExit("--guild-id is required")
     if not player:
         raise SystemExit("--player is required")
 
     payload: dict[str, Any] = {
         "brawl_id": brawl_id,
+        "guild_id": guild_id,
         "player": player,
         "card_text": None,
         "note": None,
@@ -177,6 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_set = sub.add_parser("set", help="Assign a reward card for a player in a brawl")
     p_set.add_argument("--brawl-id", required=True)
+    p_set.add_argument("--guild-id", required=True)
     p_set.add_argument("--player", required=True)
     p_set.add_argument("--card", required=True)
     p_set.add_argument("--foil", required=False, help="Optional foil tag: RF or GF")
@@ -185,6 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_clear = sub.add_parser("clear", help="Clear a reward card for a player in a brawl")
     p_clear.add_argument("--brawl-id", required=True)
+    p_clear.add_argument("--guild-id", required=True)
     p_clear.add_argument("--player", required=True)
     p_clear.set_defaults(func=cmd_clear)
 
