@@ -31,7 +31,7 @@
   - `supabase/functions/update-season-schedule` (calls Supabase Scheduler). Env: `SUPABASE_URL`, optional `SYNC_SEASON_ENDPOINT`, `SYNC_SCHEDULE_NAME`, `SYNC_FUNCTION_NAME`. Uses the incoming `Authorization` header for Supabase auth.
   - `supabase/functions/tournament-ingest` (Splinterlands ingest + upsert). Env: `SUPABASE_URL`. Uses the incoming `Authorization` header for Supabase auth.
   - `season-sync` Edge function is referenced in migrations/README but not present in `supabase/functions`.
-- Extensions and jobs (migrations): `pg_net`, `pg_cron`, `http`; cron jobs `season-sync-hourly`, `refresh-season-sync-cron`, and `tournament-ingest-frequent` (*/10 minutes, window set to 3 days).
+- Extensions and jobs (migrations): `pg_net`, `pg_cron`, `http`; cron jobs `season-sync-hourly`, `refresh-season-sync-cron`, and `tournament-ingest-frequent` (*/10 minutes, window set to 3 days). RLS is enabled on `reward_cards` and `tournament_rewards` with public read policies.
 - Tables/views/functions (from migrations and code usage):
   - Tables: `public.tracked_guilds`, `public.brawl_cycles`, `public.brawl_player_cycle`, `public.brawl_rewards`, `public.tournament_events`, `public.tournament_results`, `public.tournament_ingest_organizers`, `public.tournament_ingest_state`, `public.point_schemes`, `public.series_configs`, `public.season_rewards` (altered in migrations), `public.tournament_logs` (used by scripts), `public.reward_cards`, `public.tournament_rewards`.
   - Views: `public.tournament_result_points`, `public.tournament_leaderboard_totals`.
