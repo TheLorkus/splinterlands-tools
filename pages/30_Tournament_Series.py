@@ -16,6 +16,8 @@ except ImportError:
 
     def get_last_supabase_error() -> str:  # type: ignore
         return "Helper not available"
+
+
 from series import leaderboard, tournament
 
 setup_page("Tournament Series")
@@ -46,6 +48,15 @@ def render_page() -> None:
                 st.error(f"Failed to trigger refresh: {get_last_supabase_error() or 'Unknown error'}")
         st.caption("Refreshes the last 3 days of organizer tournaments into the database.")
 
+    params = st.query_params
+    requested_view = params.get("view") or params.get("tab")
+    if isinstance(requested_view, list):
+        requested_view = requested_view[0] if requested_view else None
+    if isinstance(requested_view, str):
+        requested_view = requested_view.strip().lower()
+        if requested_view in {"leaderboard", "tournament"}:
+            st.session_state["__series_view"] = requested_view
+
     view = st.session_state.get("__series_view", "leaderboard")
     view = st.radio(
         "Pick a view",
@@ -55,6 +66,8 @@ def render_page() -> None:
         index=0 if view == "leaderboard" else 1,
         key="__series_view",
     )
+    if params.get("view") != view:
+        params["view"] = view
 
     st.divider()
 

@@ -71,13 +71,21 @@ def render_page(embed_mode: bool = False) -> None:
         st.caption("Pick an organizer and config to view its saved series leaderboard.")
 
     params = st.query_params
-    default_org = params.get("organizer") or params.get("org") or "lorkus"
-    default_config = params.get("config") or params.get("name") or params.get("id") or "Delegated & Dangerous"
+
+    def _coerce_param(value):
+        if isinstance(value, list):
+            return value[0] if value else None
+        return value
+
+    default_org = _coerce_param(params.get("organizer")) or _coerce_param(params.get("org")) or "lorkus"
+    default_config = _coerce_param(params.get("config")) or _coerce_param(params.get("name")) or _coerce_param(params.get("id")) or "Delegated & Dangerous"
 
     organizer = st.text_input("Organizer", value=default_org, placeholder="e.g., lorkus or clove71").strip()
     if not organizer:
         st.info("Enter an organizer to load their saved series configs.")
         return
+    if _coerce_param(params.get("organizer")) != organizer:
+        params["organizer"] = organizer
 
     configs = fetch_series_configs(organizer)
     if not configs:
@@ -100,6 +108,9 @@ def render_page(embed_mode: bool = False) -> None:
     if not selected_config:
         st.warning("Select a config to continue.")
         return
+    config_param_value = str(selected_config.get("id") or selected_label)
+    if _coerce_param(params.get("config")) != config_param_value:
+        params["config"] = config_param_value
 
     # Extract filters from config
     include_ids = selected_config.get("include_ids") or []
@@ -229,23 +240,17 @@ def render_page(embed_mode: bool = False) -> None:
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
-            message=(
-                "The behavior of DataFrame concatenation with empty or all-NA entries is deprecated.*"
-            ),
+            message=("The behavior of DataFrame concatenation with empty or all-NA entries is deprecated.*"),
             category=FutureWarning,
         )
         df = pd.DataFrame.from_records(total_rows, columns=columns)
     styler = df.style
     if cutoff is not None and cutoff > 0:
         if qualifying_count:
+
             def _highlight_cutoff(row):
                 if str(row.get("Player", "")).startswith("Cutoff at"):
-                    return [
-                        (
-                            "background-color: #5f0000; color: #ffffff; font-weight: bold; "
-                            "padding-top: 0px; padding-bottom: 0px; line-height: 0.7em; font-size: 0.9em;"
-                        )
-                    ] * len(row)
+                    return [("background-color: #5f0000; color: #ffffff; font-weight: bold; " "padding-top: 0px; padding-bottom: 0px; line-height: 0.7em; font-size: 0.9em;")] * len(row)
                 return [""] * len(row)
 
             styler = df.style.apply(_highlight_cutoff, axis=1)
