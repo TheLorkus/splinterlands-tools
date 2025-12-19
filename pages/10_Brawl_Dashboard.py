@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 import altair as alt
@@ -24,7 +23,6 @@ from features.brawl.service import (
     ingest_brawl_ids,
     is_guild_tracked,
     search_guilds,
-    upsert_brawl_rewards,
 )
 
 setup_page("Brawl Dashboard")
@@ -299,64 +297,9 @@ def render_page() -> None:
                         height=400,
                     )
                     if using_supabase:
-                        if brawl_id:
-                            reward_editor = brawl_detail_df[["player", "wins", "losses", "draws"]].copy()
-                            reward_editor["matches"] = reward_editor["wins"] + reward_editor["losses"] + reward_editor["draws"]
-                            reward_editor["perfect"] = (reward_editor["matches"] > 0) & (reward_editor["wins"] == reward_editor["matches"])
-                            reward_editor["reward_card"] = reward_editor["player"].map(lambda p: (reward_map.get(p) or {}).get("card_text") or "")
-                            reward_editor["foil"] = reward_editor["player"].map(lambda p: (reward_map.get(p) or {}).get("foil") or "")
-                            reward_editor["note"] = reward_editor["player"].map(lambda p: (reward_map.get(p) or {}).get("note") or "")
-
-                            st.markdown("#### Perfect brawl rewards")
-                            edited_rewards = st.data_editor(
-                                reward_editor,
-                                hide_index=True,
-                                use_container_width=True,
-                                disabled=["player", "perfect", "matches", "wins", "losses", "draws"],
-                                column_config={
-                                    "reward_card": st.column_config.TextColumn("Card text"),
-                                    "foil": st.column_config.SelectboxColumn(
-                                        "Foil",
-                                        options=["", "RF", "GF"],
-                                    ),
-                                    "note": st.column_config.TextColumn("Note"),
-                                },
-                                key=f"brawl_rewards_{brawl_id}",
-                            )
-                            if st.button("Save rewards", key=f"save_brawl_rewards_{brawl_id}"):
-                                now_iso = datetime.now(tz=UTC).isoformat()
-                                rows_to_save = []
-                                for row in edited_rewards.to_dict("records"):
-                                    card_text = row.get("reward_card") or None
-                                    foil = row.get("foil") or None
-                                    note = row.get("note") or None
-                                    is_perfect = bool(row.get("perfect"))
-                                    if not any([card_text, foil, note, is_perfect]):
-                                        continue
-                                    rows_to_save.append(
-                                        {
-                                            "brawl_id": brawl_id,
-                                            "guild_id": guild_id,
-                                            "player": row.get("player"),
-                                            "is_perfect": is_perfect,
-                                            "card_text": card_text,
-                                            "foil": foil,
-                                            "note": note,
-                                            "updated_at": now_iso,
-                                        }
-                                    )
-                                if rows_to_save:
-                                    if upsert_brawl_rewards(rows_to_save):
-                                        st.success("Rewards saved.")
-                                        st.rerun()
-                                    else:
-                                        st.error("Failed to save rewards. Check Supabase credentials.")
-                                else:
-                                    st.info("No reward changes to save.")
-                        else:
-                            st.info("Reward editing is unavailable for this brawl.")
+                        st.info("Reward delegations are read-only in the dashboard. " "To update rewards, use the Supabase dashboard or an admin script.")
                     else:
-                        st.info("Refresh brawl history to enable reward editing.")
+                        st.info("Refresh brawl history to enable reward display from Supabase.")
 
     with tabs[1]:
         st.subheader(f"{guild_label} Player Stats Over Window")
