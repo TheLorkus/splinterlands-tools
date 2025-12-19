@@ -125,7 +125,8 @@ def render_page() -> None:
         selected_guild_info = next((g for g in all_guilds if g.get("id") == guild_id), None)
     except Exception:
         selected_guild_info = None
-    guild_label = (str(selected_guild_info.get("name") or "").strip() or guild_id).strip()
+    selected_name = str((selected_guild_info or {}).get("name") or "").strip()
+    guild_label = (selected_name or str(guild_id).strip()).strip()
     guild_url = f"https://next.splinterlands.com/guild/{guild_id}?tab=about"
     st.info(f"Viewing **{guild_label}** · [Open guild page]({guild_url})")
 
@@ -165,7 +166,7 @@ def render_page() -> None:
             }
             info_df = pd.DataFrame([info_rows]).rename(columns=friendly)
             st.markdown("#### Guild info")
-            st.dataframe(info_df, hide_index=True, width="stretch")
+            st.dataframe(info_df, hide_index=True, use_container_width=True)
         rename_map = {
             "cycle": "Cycle",
             "created_date": "Date",
@@ -196,7 +197,7 @@ def render_page() -> None:
 
         st.dataframe(
             styled_history,
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
             height=400,
         )
@@ -258,7 +259,7 @@ def render_page() -> None:
 
                     st.dataframe(
                         styled_detail,
-                        width="stretch",
+                        use_container_width=True,
                         hide_index=True,
                         height=400,
                     )
@@ -349,7 +350,7 @@ def render_page() -> None:
                 display_df["win_rate"] = (display_df["win_rate"] * 100).round(1)
                 st.dataframe(
                     display_df[["player", "wins", "losses", "draws", "matches", "win_rate", "brawls_played"]],
-                    width="stretch",
+                    use_container_width=True,
                 )
 
     with tabs[2]:
@@ -396,7 +397,7 @@ def render_page() -> None:
                 )
                 .properties(height=280)
             )
-            st.altair_chart(bar_chart, width="stretch")
+            st.altair_chart(bar_chart, use_container_width=True)
         else:
             st.info("Not enough data to compute wins vs losses.")
 
@@ -415,7 +416,7 @@ def render_page() -> None:
             )
             .properties(height=250)
         )
-        st.altair_chart(win_rate_chart, width="stretch")
+        st.altair_chart(win_rate_chart, use_container_width=True)
 
 
 if __name__ == "__main__":
