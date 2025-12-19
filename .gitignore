@@ -25,6 +25,6 @@ data/*.csv
 supabase/.temp/
 
 # Local docs/scripts not for git
-planning_doc
+docs/planning_doc.md
 scripts/ingest_tournament_results.py
 docs/tournament_ingest_admin.md

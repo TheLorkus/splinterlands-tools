@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import warnings
 from datetime import date, datetime
+from typing import TypedDict
 
 import pandas as pd
 import streamlit as st
 
 from core.config import setup_page
 from scholar_helper.services.storage import (
+    fetch_reward_cards,
     fetch_series_configs,
     fetch_tournament_events_supabase,
     fetch_tournament_results_supabase,
+    fetch_tournament_rewards_for_tournament_ids,
+    fetch_tournament_rewards_supabase,
     get_last_supabase_error,
 )
 
@@ -112,12 +116,20 @@ def render_page(embed_mode: bool = False) -> None:
     if _coerce_param(params.get("config")) != config_param_value:
         params["config"] = config_param_value
 
-    # Extract filters from config
-    include_ids = selected_config.get("include_ids") or []
-    exclude_ids = set(selected_config.get("exclude_ids") or [])
+    # Extract filters from config (coerce to concrete types for type-checkers)
+    include_ids_raw = selected_config.get("include_ids")
+    include_ids: list[str] = []
+    if isinstance(include_ids_raw, list):
+        include_ids = [str(v) for v in include_ids_raw if v is not None and str(v).strip()]
+
+    exclude_ids_raw = selected_config.get("exclude_ids")
+    exclude_ids: set[str] = set()
+    if isinstance(exclude_ids_raw, list):
+        exclude_ids = {str(v) for v in exclude_ids_raw if v is not None and str(v).strip()}
+
     since_dt = _parse_date(selected_config.get("include_after"))
     until_dt = _parse_date(selected_config.get("include_before"))
-    scheme = selected_config.get("point_scheme") or "balanced"
+    scheme = str(selected_config.get("point_scheme") or "balanced")
     cutoff = _as_float(selected_config.get("qualification_cutoff"))
 
     title_text = f"{selected_label} Series Leaderboard"
@@ -157,7 +169,7 @@ def render_page(embed_mode: bool = False) -> None:
         st.info("No tournaments remain after applying include/exclude filters.")
         return
 
-    event_ids = [t.get("tournament_id") for t in tournaments if t.get("tournament_id")]
+    event_ids: list[str] = [str(t.get("tournament_id")) for t in tournaments if t.get("tournament_id")]
 
     points_key = {
         "balanced": "points_balanced",
@@ -173,25 +185,69 @@ def render_page(embed_mode: bool = False) -> None:
             until=until_dt,
         )
 
+    # Optional: series-wide delegated cards (only for organizer "lorkus")
+    delegations_by_player: dict[str, str] = {}
+    if organizer.strip().lower() == "lorkus" and event_ids:
+        reward_rows = fetch_tournament_rewards_for_tournament_ids(event_ids)
+        card_rows = fetch_reward_cards(enabled_only=False)
+
+        card_name_by_id: dict[object, str] = {}
+        for c in card_rows:
+            cid = c.get("reward_card_id")
+            name = c.get("name")
+            if cid is not None and isinstance(name, str) and name.strip():
+                card_name_by_id[cid] = name.strip()
+
+        order_idx = {tid: i for i, tid in enumerate(event_ids)}
+        tmp: dict[str, list[tuple[int, str]]] = {}
+        for r in reward_rows:
+            tid = r.get("tournament_id")
+            player_raw = r.get("player")
+            cid = r.get("reward_card_id")
+            if not isinstance(player_raw, str) or not player_raw.strip():
+                continue
+            if tid is None or cid is None:
+                continue
+            name = card_name_by_id.get(cid)
+            if not name:
+                continue
+            tid_str = str(tid)
+            idx = order_idx.get(tid_str, 10**9)
+            key = player_raw.strip().lower()
+            tmp.setdefault(key, []).append((idx, name))
+
+        for p, items in tmp.items():
+            items.sort(key=lambda t: t[0])
+            delegations_by_player[p] = ", ".join([nm for _, nm in items])
+
     if not result_rows:
         st.info("No leaderboard rows found.")
         return
 
-    totals_map: dict[str, dict[str, object]] = {}
+    class _PlayerAgg(TypedDict):
+        points: float
+        events: int
+        finishes: list[float]
+        podiums: int
+
+    totals_map: dict[str, _PlayerAgg] = {}
     for row in result_rows:
         player = str(row.get("player") or "").strip()
         if not player:
             continue
-        pts = _as_float(row.get(points_key)) or 0
+        pts = _as_float(row.get(points_key)) or 0.0
         finish = _as_float(row.get("finish"))
-        agg = totals_map.setdefault(
-            player,
-            {"points": 0.0, "events": 0, "finishes": [], "podiums": 0},
-        )
-        agg["points"] += pts
+
+        agg = totals_map.get(player)
+        if agg is None:
+            new_agg: _PlayerAgg = {"points": 0.0, "events": 0, "finishes": [], "podiums": 0}
+            totals_map[player] = new_agg
+            agg = new_agg
+
+        agg["points"] += float(pts)
         agg["events"] += 1
         if finish is not None:
-            agg["finishes"].append(finish)
+            agg["finishes"].append(float(finish))
             if 1 <= finish <= 3:
                 agg["podiums"] += 1
 
@@ -203,6 +259,7 @@ def render_page(embed_mode: bool = False) -> None:
         total_rows.append(
             {
                 "Player": player,
+                "Card delegations": delegations_by_player.get(player.strip().lower(), "") if organizer.strip().lower() == "lorkus" else "",
                 "Points": agg["points"],
                 "Events": agg["events"],
                 "Avg Finish": avg_finish,
@@ -210,6 +267,11 @@ def render_page(embed_mode: bool = False) -> None:
                 "Podiums": agg["podiums"],
             }
         )
+
+    if organizer.strip().lower() == "lorkus":
+        columns = ["Player", "Card delegations", "Points", "Events", "Avg Finish", "Best", "Podiums"]
+    else:
+        columns = ["Player", "Points", "Events", "Avg Finish", "Best", "Podiums"]
 
     total_rows.sort(key=lambda r: r["Points"], reverse=True)
     qualifying_count = 0
@@ -236,7 +298,6 @@ def render_page(embed_mode: bool = False) -> None:
                 },
             )
 
-    columns = ["Player", "Points", "Events", "Avg Finish", "Best", "Podiums"]
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
@@ -250,7 +311,7 @@ def render_page(embed_mode: bool = False) -> None:
 
             def _highlight_cutoff(row):
                 if str(row.get("Player", "")).startswith("Cutoff at"):
-                    return [("background-color: #5f0000; color: #ffffff; font-weight: bold; " "padding-top: 0px; padding-bottom: 0px; line-height: 0.7em; font-size: 0.9em;")] * len(row)
+                    return [("background-color: #5f0000; color: #ffffff; font-weight: bold; padding-top: 0px; padding-bottom: 0px; line-height: 0.7em; font-size: 0.9em;")] * len(row)
                 return [""] * len(row)
 
             styler = df.style.apply(_highlight_cutoff, axis=1)
@@ -261,10 +322,11 @@ def render_page(embed_mode: bool = False) -> None:
     st.dataframe(
         styler,
         hide_index=True,
-        width="stretch",
+        use_container_width=True,
         height=_table_height_for_rows(len(df)),
         column_config={
             "Player": st.column_config.TextColumn(),
+            "Card delegations": st.column_config.TextColumn(),
             "Points": st.column_config.NumberColumn(format="%.0f"),
             "Events": st.column_config.NumberColumn(format="%d"),
             "Avg Finish": st.column_config.NumberColumn(format="%.2f"),
@@ -287,7 +349,7 @@ def render_page(embed_mode: bool = False) -> None:
     st.dataframe(
         rows,
         hide_index=True,
-        width="stretch",
+        use_container_width=True,
         height=_table_height_for_rows(len(rows), min_height=180, extra=90),
     )
 
@@ -298,6 +360,27 @@ def render_page(embed_mode: bool = False) -> None:
     tournament_id = selected_event.get("tournament_id")
     leaderboard = [r for r in result_rows if r.get("tournament_id") == tournament_id]
 
+    reward_map: dict[str, str] = {}
+    if organizer.strip().lower() == "lorkus" and tournament_id:
+        reward_rows_single = fetch_tournament_rewards_supabase(str(tournament_id))
+        card_rows_single = fetch_reward_cards(enabled_only=False)
+        card_name_by_id_single: dict[object, str] = {}
+        for c in card_rows_single:
+            cid = c.get("reward_card_id")
+            name = c.get("name")
+            if cid is not None and isinstance(name, str) and name.strip():
+                card_name_by_id_single[cid] = name.strip()
+        for r in reward_rows_single:
+            player_raw = r.get("player")
+            cid = r.get("reward_card_id")
+            if not isinstance(player_raw, str) or not player_raw.strip():
+                continue
+            if cid is None:
+                continue
+            nm = card_name_by_id_single.get(cid)
+            if nm:
+                reward_map[player_raw.strip().lower()] = nm
+
     st.subheader(f"Leaderboard: {selected_event.get('name') or tournament_id}")
     if leaderboard:
         st.dataframe(
@@ -305,17 +388,19 @@ def render_page(embed_mode: bool = False) -> None:
                 {
                     "Finish": row.get("finish"),
                     "Player": row.get("player"),
+                    "Card delegation": reward_map.get(str(row.get("player") or "").strip().lower(), "") if organizer.strip().lower() == "lorkus" else "",
                     "Points": _as_float(row.get(points_key)),
                     "Prizes": row.get("prize_text"),
                 }
                 for row in leaderboard
             ],
             hide_index=True,
-            width="stretch",
+            use_container_width=True,
             height=_table_height_for_rows(len(leaderboard), min_height=220, extra=100),
             column_config={
                 "Finish": st.column_config.NumberColumn(format="%d"),
                 "Player": st.column_config.TextColumn(),
+                "Card delegation": st.column_config.TextColumn(),
                 "Points": st.column_config.NumberColumn(format="%.0f"),
                 "Prizes": st.column_config.TextColumn(),
             },

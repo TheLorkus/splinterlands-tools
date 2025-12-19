@@ -378,7 +378,7 @@ def render_page(embed_mode: bool = False) -> None:
         return
     else:
         if source == "api":
-            st.info("Using live Splinterlands API data for this organizer (not yet stored). " "Points are computed locally with the selected scheme.")
+            st.info("Using live Splinterlands API data for this organizer (not yet stored). Points are computed locally with the selected scheme.")
         else:
             st.caption("Loaded tournaments from stored data.")
 
@@ -539,7 +539,7 @@ def render_page(embed_mode: bool = False) -> None:
 
                     def _highlight_cutoff(row):
                         if str(row.get("Player", "")).startswith("Cutoff at"):
-                            return [("background-color: #5f0000; color: #ffffff; font-weight: bold; " "padding-top: 0px; padding-bottom: 0px; line-height: 0.7em; font-size: 0.9em;")] * len(row)
+                            return [("background-color: #5f0000; color: #ffffff; font-weight: bold; padding-top: 0px; padding-bottom: 0px; line-height: 0.7em; font-size: 0.9em;")] * len(row)
                         return [""] * len(row)
 
                     styler = df.style.apply(_highlight_cutoff, axis=1)

@@ -8,6 +8,7 @@ Usage:
 This mirrors the DB ingest: fetches the organizer's tournaments from the Splinterlands API,
 pulls details for each event, and upserts into tournament_events and tournament_results.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,9 +24,7 @@ def _get_supabase_creds() -> tuple[str, str]:
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY")
     if not url or not key:
-        raise SystemExit(
-            "Missing Supabase credentials. Set SUPABASE_URL and either SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SERVICE_KEY."
-        )
+        raise SystemExit("Missing Supabase credentials. Set SUPABASE_URL and either SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SERVICE_KEY.")
     return url, key
 
 
@@ -60,12 +59,7 @@ def _parse_prizes(player: dict, payouts: list) -> tuple[list | None, str | None]
     prize_tokens: list[dict] = []
     prize_text_parts: list[str] = []
 
-    direct_prize = (
-        player.get("ext_prize_info")
-        or player.get("prizes")
-        or player.get("prize")
-        or player.get("player_prize")
-    )
+    direct_prize = player.get("ext_prize_info") or player.get("prizes") or player.get("prize") or player.get("player_prize")
     if isinstance(direct_prize, list):
         for item in direct_prize:
             norm = _normalize_prize_item(item)
@@ -156,17 +150,8 @@ def ingest_organizer(organizer: str, max_age_days: int) -> None:
             continue
 
         status = detail_resp.get("status") or detail_resp.get("current_round") or item.get("status")
-        entrants = (
-            detail_resp.get("players_registered")
-            or detail_resp.get("num_players")
-            or item.get("players_registered")
-        )
-        payouts = (
-            detail_resp.get("data", {}).get("prizes", {}).get("payouts")
-            or detail_resp.get("prizes", {}).get("payouts")
-            or item.get("data", {}).get("prizes", {}).get("payouts")
-            or []
-        )
+        entrants = detail_resp.get("players_registered") or detail_resp.get("num_players") or item.get("players_registered")
+        payouts = detail_resp.get("data", {}).get("prizes", {}).get("payouts") or detail_resp.get("prizes", {}).get("payouts") or item.get("data", {}).get("prizes", {}).get("payouts") or []
         allowed_cards = detail_resp.get("data", {}).get("allowed_cards") or item.get("data", {}).get("allowed_cards")
 
         event_rows.append(

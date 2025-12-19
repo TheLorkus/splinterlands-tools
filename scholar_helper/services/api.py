@@ -305,7 +305,7 @@ def fetch_tournaments_for_season(username: str, season: SeasonWindow, limit: int
 
 
 def fetch_unclaimed_balance_history(username: str, token_type: str = "SPS", offset: int = 0, limit: int = 1000) -> list[RewardEntry]:
-    url = "https://api.splinterlands.com/players/unclaimed_balance_history" f"?username={username}&token_type={token_type}&offset={offset}&limit={limit}"
+    url = f"https://api.splinterlands.com/players/unclaimed_balance_history?username={username}&token_type={token_type}&offset={offset}&limit={limit}"
     resp = _client.get(url)
     resp.raise_for_status()
     payload = resp.json() or []
@@ -349,7 +349,7 @@ def fetch_unclaimed_balance_history_for_season(
     offset = 0
     entries: list[RewardEntry] = []
     while True:
-        url = "https://api.splinterlands.com/players/unclaimed_balance_history" f"?username={username}&token_type={token_type}&offset={offset}&limit={page_limit}"
+        url = f"https://api.splinterlands.com/players/unclaimed_balance_history?username={username}&token_type={token_type}&offset={offset}&limit={page_limit}"
         resp = _client.get(url)
         resp.raise_for_status()
         payload = resp.json() or []

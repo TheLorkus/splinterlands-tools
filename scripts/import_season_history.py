@@ -176,11 +176,7 @@ def _build_payload(
         else:
             payload[column] = _coerce_value(column, values[0], default_token)
     season_id = payload.get("season_id")
-    if (
-        fetch_season_window
-        and season_id
-        and ("season_start" not in payload or "season_end" not in payload)
-    ):
+    if fetch_season_window and season_id and ("season_start" not in payload or "season_end" not in payload):
         season_start, season_end = _ensure_season_window(season_id, season_api_template)
         if season_start:
             payload.setdefault("season_start", season_start)
@@ -194,9 +190,7 @@ def _build_payload(
 def main() -> None:
     load_dotenv()
 
-    parser = argparse.ArgumentParser(
-        description="Upsert historical season rows for a single username into supabase."
-    )
+    parser = argparse.ArgumentParser(description="Upsert historical season rows for a single username into supabase.")
     parser.add_argument("csv_path", help="CSV file exported from your spreadsheet.")
     parser.add_argument(
         "--table",

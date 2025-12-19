@@ -25,9 +25,7 @@ def filter_rewards_for_season(rewards: Iterable[RewardEntry], season: SeasonWind
     ]
 
 
-def filter_tournaments_for_season(
-    tournaments: Iterable[TournamentResult], season: SeasonWindow
-) -> list[TournamentResult]:
+def filter_tournaments_for_season(tournaments: Iterable[TournamentResult], season: SeasonWindow) -> list[TournamentResult]:
     filtered: list[TournamentResult] = []
     for t in tournaments:
         if t.start_date is None:
@@ -67,9 +65,7 @@ def aggregate_totals(
         for token, amount in bucket.token_amounts.items():
             overall_tokens[token] += amount
 
-    overall_usd = sum(
-        (prices.get(token) or 0) * amount for token, amount in overall_tokens.items()
-    )
+    overall_usd = sum((prices.get(token) or 0) * amount for token, amount in overall_tokens.items())
     overall_totals = CategoryTotals(token_amounts=dict(overall_tokens), usd=overall_usd)
 
     return AggregatedTotals(

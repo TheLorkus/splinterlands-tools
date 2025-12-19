@@ -11,7 +11,7 @@
 - Modules:
   - `scholar_helper/services/api.py`: Splinterlands API client + parsing.
   - `scholar_helper/services/aggregation.py`: season filtering and totals.
-  - `scholar_helper/services/storage.py`: Supabase PostgREST/RPC helpers.
+  - `scholar_helper/services/storage.py`: Supabase PostgREST/RPC helpers, including tournament reward card catalog and per-tournament delegation fetch helpers.
   - `scholar_helper/services/brawl_dashboard.py`: brawl endpoints + helpers.
   - `scholar_helper/services/brawl_persistence.py`: Supabase brawl persistence (tracked guild checks, ingest, reads).
   - `series/leaderboard.py` and `series/tournament.py`: Tournament Series UI logic.
@@ -22,7 +22,7 @@
 ## Data flow and caching
 - Brawl Dashboard: UI -> `features/brawl/service.py` -> Supabase-first reads for tracked guilds (`tracked_guilds`, `brawl_cycles`, `brawl_player_cycle`, `brawl_rewards`) with fallback to live Splinterlands API (`/guilds/brawl_records`, `/tournaments/find_brawl`, `/guilds/list`). Cached via `st.cache_data` (TTL 300s for live brawl calls, 86400s for guild list). Manual refresh triggers ingestion via service-role key; drill-down shows reward card text with foil styling when rewards exist.
 - Rewards Tracker: UI -> `features/scholar/service.py` -> `scholar_helper/services/api.py` -> Splinterlands API (`/settings`, `/season`, `/prices`, `/players/unclaimed_balance_history`, `/tournaments/completed`, `/tournaments/find`). Cached via `st.cache_data` (TTL 300s) plus in-memory `cachetools.TTLCache` (TTL 300s) inside the API module. Snapshot saves use the already-fetched rows per user to avoid stale writes; history rows are displayed with USD re-derived from stored token buckets when price data is available.
-- Tournament Series: UI -> `series/*` -> `scholar_helper/services/storage.py` -> Supabase tables/views (`tournament_events`, `tournament_results`, `tournament_result_points`, `tournament_leaderboard_totals`). Falls back to live Splinterlands API via `fetch_hosted_tournaments` + `fetch_tournament_leaderboard` when Supabase has no rows.
+- Tournament Series: UI -> `series/*` -> `scholar_helper/services/storage.py` -> Supabase tables/views (`tournament_events`, `tournament_results`, `tournament_result_points`, `tournament_leaderboard_totals`). Falls back to live Splinterlands API via `fetch_hosted_tournaments` + `fetch_tournament_leaderboard` when Supabase has no rows. When the organizer is "lorkus", the series leaderboard and per-tournament leaderboard also display delegated reward cards pulled from the reward card catalog and tournament reward annotations, ordered by tournament_id across the series window.
 - Supabase persistence: CLI/scripts (`scripts/season_sync.py`, `scholar_helper/cli/sync_supabase.py`, `scripts/import_season_history.py`) and the UI history tab read/write via `storage.py` (PostgREST). Tournament ingest is handled by the `tournament-ingest` Edge Function (scheduled via cron + manual UI trigger).
 
 ## Supabase configuration and schema
@@ -33,7 +33,7 @@
   - `season-sync` Edge function is referenced in migrations/README but not present in `supabase/functions`.
 - Extensions and jobs (migrations): `pg_net`, `pg_cron`, `http`; cron jobs `season-sync-hourly`, `refresh-season-sync-cron`, and `tournament-ingest-frequent` (*/10 minutes, window set to 3 days).
 - Tables/views/functions (from migrations and code usage):
-  - Tables: `public.tracked_guilds`, `public.brawl_cycles`, `public.brawl_player_cycle`, `public.brawl_rewards`, `public.tournament_events`, `public.tournament_results`, `public.tournament_ingest_organizers`, `public.tournament_ingest_state`, `public.point_schemes`, `public.series_configs`, `public.season_rewards` (altered in migrations), `public.tournament_logs` (used by scripts).
+  - Tables: `public.tracked_guilds`, `public.brawl_cycles`, `public.brawl_player_cycle`, `public.brawl_rewards`, `public.tournament_events`, `public.tournament_results`, `public.tournament_ingest_organizers`, `public.tournament_ingest_state`, `public.point_schemes`, `public.series_configs`, `public.season_rewards` (altered in migrations), `public.tournament_logs` (used by scripts), `public.reward_cards`, `public.tournament_rewards`.
   - Views: `public.tournament_result_points`, `public.tournament_leaderboard_totals`.
   - Functions: `public.refresh_tournament_ingest` (legacy), `public.normalize_prize_item`, `public.calculate_points_for_finish`, `public.insert_series_config_from_json`, `call_season_sync`, `call_update_season_schedule`, `public.call_tournament_ingest`.
   - RLS: public SELECT policies + service_role write policies for ingest/config tables (see `supabase/migrations/20251210223200_optimize_rls_policies.sql`).
@@ -46,6 +46,7 @@
   - Tournament Series leaderboard/configurator with Supabase-backed data and API fallback.
   - Supabase ingest functions, views, and point scheme seed data.
   - CLI/scripts for season sync, CSV history import, and brawl ingest.
+  - Tournament Series delegated card tracking: catalog-backed reward cards and per-tournament annotations, displayed read-only in series and per-event leaderboards for organizer "lorkus".
 - Stubbed/placeholder:
   - SPS Analytics page is a placeholder (`pages/40_SPS_Analytics.py`).
   - `season-sync` Edge function code not in repo (only referenced in migrations/README).

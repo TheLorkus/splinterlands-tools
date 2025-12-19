@@ -24,7 +24,10 @@ TOURNAMENT_EVENTS_TABLE = "tournament_events"
 TOURNAMENT_RESULTS_TABLE = "tournament_results"
 TOURNAMENT_ORGANIZERS_TABLE = "tournament_ingest_organizers"
 SERIES_CONFIGS_TABLE = "series_configs"
+
 TOURNAMENT_INGEST_STATE_TABLE = "tournament_ingest_state"
+REWARD_CARDS_TABLE = "reward_cards"
+TOURNAMENT_REWARDS_TABLE = "tournament_rewards"
 
 API_BASE = "https://api.splinterlands.com"
 DEFAULT_MAX_TOURNAMENTS = 200
@@ -899,6 +902,38 @@ def fetch_point_schemes() -> list[dict[str, object]]:
     """
     params: dict[str, object] = {"order": "slug.asc"}
     return _supabase_fetch("point_schemes", params)
+
+
+# === Tournament Delegation/Reward Card helpers ===
+def fetch_reward_cards(enabled_only: bool = True) -> list[dict[str, object]]:
+    """Fetch allowed reward cards (catalog)."""
+    params: dict[str, object] = {"order": "sort_order.asc.nullslast,name.asc"}
+    if enabled_only:
+        params["enabled"] = "eq.true"
+    return _supabase_fetch(REWARD_CARDS_TABLE, params)
+
+
+def fetch_tournament_rewards_supabase(tournament_id: str) -> list[dict[str, object]]:
+    """Fetch delegation annotations for a single tournament."""
+    if not tournament_id:
+        return []
+    params: dict[str, object] = {
+        "tournament_id": f"eq.{tournament_id}",
+        "order": "updated_at.asc.nullslast",
+    }
+    return _supabase_fetch(TOURNAMENT_REWARDS_TABLE, params)
+
+
+def fetch_tournament_rewards_for_tournament_ids(tournament_ids: Sequence[str]) -> list[dict[str, object]]:
+    """Fetch delegation annotations across a set of tournaments."""
+    ids = [str(tid).strip() for tid in tournament_ids if tid and str(tid).strip()]
+    if not ids:
+        return []
+    params: dict[str, object] = {
+        "tournament_id": f"in.({','.join(ids)})",
+        "order": "updated_at.asc.nullslast",
+    }
+    return _supabase_fetch(TOURNAMENT_REWARDS_TABLE, params)
 
 
 def fetch_tournament_leaderboard_totals_supabase(organizer: str, scheme: str = "balanced") -> list[dict[str, object]]:

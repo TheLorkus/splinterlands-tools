@@ -14,7 +14,7 @@ except ImportError:
     def refresh_tournament_ingest_all(max_age_days: int = 3) -> bool:  # type: ignore
         return False
 
-    def get_last_supabase_error() -> str:  # type: ignore
+    def get_last_supabase_error() -> str | None:  # type: ignore
         return "Helper not available"
 
 
