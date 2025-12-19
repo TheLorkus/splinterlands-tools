@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import altair as alt
 import pandas as pd
@@ -28,7 +29,7 @@ from features.brawl.service import (
 
 setup_page("Brawl Dashboard")
 TREND_CYCLE_LIMIT = 20
-DEFAULT_BRAWL_CYCLE_COUNT = 3
+DEFAULT_BRAWL_CYCLE_COUNT = 20
 
 
 def render_page() -> None:
@@ -220,6 +221,22 @@ def render_page() -> None:
                 if brawl_detail_df.empty:
                     st.info("No player data found for that specific brawl.")
                 else:
+                    brawl_id: str | None = None
+                    reward_map: dict[str, dict[str, Any]] = {}
+                    brawl_ids = brawl_detail_df["tournament_id"].dropna().unique()
+                    if len(brawl_ids):
+                        brawl_id = str(brawl_ids[0])
+                    if using_supabase and brawl_id:
+                        reward_rows = fetch_brawl_rewards_supabase(guild_id, brawl_id)
+                        for row in reward_rows:
+                            player_key = row.get("player")
+                            if isinstance(player_key, str) and player_key:
+                                reward_map[player_key] = row
+                        brawl_detail_df["reward_card"] = brawl_detail_df["player"].map(lambda p: (reward_map.get(p) or {}).get("card_text") or "")
+                        brawl_detail_df["reward_foil"] = brawl_detail_df["player"].map(lambda p: (reward_map.get(p) or {}).get("foil") or "")
+                    else:
+                        brawl_detail_df["reward_card"] = ""
+                        brawl_detail_df["reward_foil"] = ""
                     brawl_detail_df["matches"] = brawl_detail_df["wins"] + brawl_detail_df["losses"] + brawl_detail_df["draws"]
                     brawl_detail_df["win_rate"] = (brawl_detail_df["wins"] / brawl_detail_df["matches"].replace(0, 1)).fillna(0.0)
                     brawl_detail_df["win_rate_pct"] = (brawl_detail_df["win_rate"] * 100).round(1)
@@ -231,20 +248,21 @@ def render_page() -> None:
                         "player",
                         "wins",
                         "losses",
-                        "draws",
                         "matches",
                         "win_rate_pct",
+                        "reward_card",
                     ]
                     display_detail = brawl_detail_df[display_cols].rename(
                         columns={
                             "player": "Player",
                             "wins": "Wins",
                             "losses": "Losses",
-                            "draws": "Draws",
                             "matches": "Matches",
                             "win_rate_pct": "Win rate",
+                            "reward_card": "Reward card",
                         }
                     )
+                    reward_foil = brawl_detail_df["reward_foil"].reindex(display_detail.index)
 
                     def _win_rate_bg(val) -> str:
                         try:
@@ -255,7 +273,24 @@ def render_page() -> None:
                             return "background-color: #f5da68; color: #3a2a00; font-weight: 800;"
                         return ""
 
-                    styled_detail = display_detail.style.format({"Win rate": "{:.1f}%"}).map(_win_rate_bg, subset=["Win rate"])
+                    def _reward_styles(df: pd.DataFrame) -> pd.DataFrame:
+                        styles = pd.DataFrame("", index=df.index, columns=df.columns)
+                        if "Reward card" not in styles.columns:
+                            return styles
+                        col_idx = int(styles.columns.get_indexer(pd.Index(["Reward card"]))[0])
+                        if col_idx < 0:
+                            return styles
+                        for idx, foil in reward_foil.items():
+                            row_idx = int(styles.index.get_indexer(pd.Index([idx]))[0])
+                            if row_idx < 0:
+                                continue
+                            if foil == "GF":
+                                styles.iat[row_idx, col_idx] = "color: #f5da68; font-weight: 700;"
+                            elif foil == "RF":
+                                styles.iat[row_idx, col_idx] = "color: #b5b5b5; font-weight: 600;"
+                        return styles
+
+                    styled_detail = display_detail.style.format({"Win rate": "{:.1f}%"}).map(_win_rate_bg, subset=["Win rate"]).apply(_reward_styles, axis=None)
 
                     st.dataframe(
                         styled_detail,
@@ -264,11 +299,7 @@ def render_page() -> None:
                         height=400,
                     )
                     if using_supabase:
-                        brawl_ids = brawl_detail_df["tournament_id"].dropna().unique()
-                        brawl_id = str(brawl_ids[0]) if len(brawl_ids) else None
                         if brawl_id:
-                            reward_rows = fetch_brawl_rewards_supabase(guild_id, brawl_id)
-                            reward_map = {row.get("player"): row for row in reward_rows}
                             reward_editor = brawl_detail_df[["player", "wins", "losses", "draws"]].copy()
                             reward_editor["matches"] = reward_editor["wins"] + reward_editor["losses"] + reward_editor["draws"]
                             reward_editor["perfect"] = (reward_editor["matches"] > 0) & (reward_editor["wins"] == reward_editor["matches"])

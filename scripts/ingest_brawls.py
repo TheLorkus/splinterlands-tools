@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
-from scholar_helper.services.brawl_persistence import (
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scholar_helper.services.brawl_persistence import (  # noqa: E402
     fetch_recent_finished_brawl_records,
     ingest_brawl_ids,
     is_guild_tracked,
