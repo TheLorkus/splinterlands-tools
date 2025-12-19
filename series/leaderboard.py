@@ -340,10 +340,12 @@ def render_page(embed_mode: bool = False) -> None:
     rows = []
     for t in tournaments:
         start_dt = _parse_date(t.get("start_date"))
+        tid = t.get("tournament_id")
         rows.append(
             {
                 "Date": _format_date(start_dt),
-                "Tournament": t.get("name") or t.get("tournament_id"),
+                "Tournament": t.get("name") or tid,
+                "Tournament ID": tid,
             }
         )
     st.dataframe(
@@ -351,6 +353,11 @@ def render_page(embed_mode: bool = False) -> None:
         hide_index=True,
         use_container_width=True,
         height=_table_height_for_rows(len(rows), min_height=180, extra=90),
+        column_config={
+            "Date": st.column_config.TextColumn(),
+            "Tournament": st.column_config.TextColumn(),
+            "Tournament ID": st.column_config.TextColumn(),
+        },
     )
 
     labels = [f"{row['Date']} - {row['Tournament']}" for row in rows]
