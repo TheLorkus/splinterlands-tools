@@ -49,13 +49,16 @@ def render_page() -> None:
         st.caption("Refreshes the last 3 days of organizer tournaments into the database.")
 
     params = st.query_params
-    requested_view = params.get("view") or params.get("tab")
-    if isinstance(requested_view, list):
-        requested_view = requested_view[0] if requested_view else None
-    if isinstance(requested_view, str):
-        requested_view = requested_view.strip().lower()
-        if requested_view in {"leaderboard", "tournament"}:
-            st.session_state["__series_view"] = requested_view
+
+    # Only honor query params on first load; don't override the user's radio selection on reruns.
+    if "__series_view" not in st.session_state:
+        requested_view = params.get("view") or params.get("tab")
+        if isinstance(requested_view, list):
+            requested_view = requested_view[0] if requested_view else None
+        if isinstance(requested_view, str):
+            requested_view = requested_view.strip().lower()
+            if requested_view in {"leaderboard", "tournament"}:
+                st.session_state["__series_view"] = requested_view
 
     view = st.session_state.get("__series_view", "leaderboard")
     view = st.radio(
