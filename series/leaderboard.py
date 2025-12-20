@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import warnings
 from datetime import date, datetime
 from typing import TypedDict
@@ -66,6 +67,58 @@ def _table_height_for_rows(
 ) -> int:
     count = max(1, row_count)
     return min(max_height, max(min_height, count * row_height + extra))
+
+
+def _tournament_detail_url(tournament_id: object) -> str | None:
+    if tournament_id is None:
+        return None
+    tid = str(tournament_id).strip()
+    if not tid:
+        return None
+    return f"https://next.splinterlands.com/tournament/detail/{tid}"
+
+
+def _format_tournament_cell(name: str, url: str | None) -> str:
+    safe_name = html.escape(name)
+    if url:
+        safe_url = html.escape(url, quote=True)
+        return f"{safe_name} - " f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">Link</a>'
+    return safe_name
+
+
+def _render_events_table(rows: list[dict[str, str]]) -> None:
+    header_cells = "<th>Date</th><th>Tournament</th><th>Tournament ID</th>"
+    body_rows = []
+    for row in rows:
+        date_text = html.escape(row.get("Date", "") or "")
+        tournament_cell = row.get("Tournament", "")
+        tournament_id = html.escape(row.get("Tournament ID", "") or "")
+        body_rows.append(f"<tr><td>{date_text}</td><td>{tournament_cell}</td><td>{tournament_id}</td></tr>")
+
+    table_html = f"""
+    <style>
+    .sl-events-table {{
+        width: 100%;
+        border-collapse: collapse;
+    }}
+    .sl-events-table th,
+    .sl-events-table td {{
+        padding: 0.35rem 0.5rem;
+        border-bottom: 1px solid rgba(49, 51, 63, 0.2);
+        text-align: left;
+        vertical-align: top;
+    }}
+    .sl-events-table a {{
+        color: inherit;
+        text-decoration: underline;
+    }}
+    </style>
+    <table class="sl-events-table">
+        <thead><tr>{header_cells}</tr></thead>
+        <tbody>{"".join(body_rows)}</tbody>
+    </table>
+    """
+    st.markdown(table_html, unsafe_allow_html=True)
 
 
 def render_page(embed_mode: bool = False) -> None:
@@ -338,27 +391,28 @@ def render_page(embed_mode: bool = False) -> None:
     # Event list and single leaderboard view
     st.subheader("Events")
     rows = []
+    display_rows = []
     for t in tournaments:
         start_dt = _parse_date(t.get("start_date"))
         tid = t.get("tournament_id")
+        name_raw = str(t.get("name") or "").strip()
+        tournament_name = name_raw or (str(tid).strip() if tid is not None else "-")
+        tournament_url = _tournament_detail_url(tid)
         rows.append(
             {
                 "Date": _format_date(start_dt),
-                "Tournament": t.get("name") or tid,
+                "Tournament": tournament_name,
                 "Tournament ID": tid,
             }
         )
-    st.dataframe(
-        rows,
-        hide_index=True,
-        use_container_width=True,
-        height=_table_height_for_rows(len(rows), min_height=180, extra=90),
-        column_config={
-            "Date": st.column_config.TextColumn(),
-            "Tournament": st.column_config.TextColumn(),
-            "Tournament ID": st.column_config.TextColumn(),
-        },
-    )
+        display_rows.append(
+            {
+                "Date": _format_date(start_dt),
+                "Tournament": _format_tournament_cell(tournament_name, tournament_url),
+                "Tournament ID": str(tid).strip() if tid is not None else "-",
+            }
+        )
+    _render_events_table(display_rows)
 
     labels = [f"{row['Date']} - {row['Tournament']}" for row in rows]
     selected_label = st.selectbox("View event leaderboard", options=labels, index=0)
