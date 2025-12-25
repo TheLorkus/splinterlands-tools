@@ -39,14 +39,23 @@ def render_page() -> None:
             """,
             unsafe_allow_html=True,
         )
+        refresh_window_days = st.selectbox(
+            "Refresh window",
+            options=[3, 7, 14, 30, 60],
+            index=2,
+            format_func=lambda d: f"Last {d} days",
+            help="Use a longer window after downtime. Larger windows may take longer to ingest.",
+        )
         if st.button("Leaderboard Update", type="primary", key="leaderboard-update"):
-            with st.spinner("Refreshing organizer tournaments (3 days)..."):
-                ok = refresh_tournament_ingest_all(max_age_days=3)
+            with st.spinner(f"Refreshing organizer tournaments (last {refresh_window_days} days)..."):
+                ok = refresh_tournament_ingest_all(max_age_days=refresh_window_days)
             if ok:
                 st.success("Tournament data refresh kicked off.")
             else:
                 st.error(f"Failed to trigger refresh: {get_last_supabase_error() or 'Unknown error'}")
-        st.caption("Refreshes the last 3 days of organizer tournaments into the database.")
+        st.caption(
+            "Refreshes organizer tournaments into the database for the selected window. " "For long downtime, extend the window and consider raising `TOURNAMENT_INGEST_MAX_TOURNAMENTS` if needed."
+        )
 
     params = st.query_params
 
