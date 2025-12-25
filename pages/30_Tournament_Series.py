@@ -53,10 +53,6 @@ def render_page() -> None:
                 st.success("Tournament data refresh kicked off.")
             else:
                 st.error(f"Failed to trigger refresh: {get_last_supabase_error() or 'Unknown error'}")
-        st.caption(
-            "Refreshes organizer tournaments into the database for the selected window. " "For long downtime, extend the window and consider raising `TOURNAMENT_INGEST_MAX_TOURNAMENTS` if needed."
-        )
-
     params = st.query_params
 
     # Only honor query params on first load; don't override the user's radio selection on reruns.

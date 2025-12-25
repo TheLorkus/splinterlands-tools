@@ -341,7 +341,7 @@ def render_page():
                         }
                     )
             if existing_snapshots:
-                st.dataframe(existing_snapshots, hide_index=True, use_container_width=True)
+                st.dataframe(existing_snapshots, hide_index=True, width="stretch")
 
             if st.button("Save/Update season snapshot to Supabase", type="primary"):
                 results = []

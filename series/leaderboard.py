@@ -375,7 +375,7 @@ def render_page(embed_mode: bool = False) -> None:
     st.dataframe(
         styler,
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         height=_table_height_for_rows(len(df)),
         column_config={
             "Player": st.column_config.TextColumn(),
@@ -456,7 +456,7 @@ def render_page(embed_mode: bool = False) -> None:
                 for row in leaderboard
             ],
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             height=_table_height_for_rows(len(leaderboard), min_height=220, extra=100),
             column_config={
                 "Finish": st.column_config.NumberColumn(format="%d"),
