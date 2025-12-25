@@ -126,20 +126,23 @@ def _format_scholar_payout(
     explicit_sps: float | None = None,
 ) -> str:
     currency_key = currency.upper()
-    if explicit_sps is None:
-        sps_amount = totals.overall.token_amounts.get("SPS", 0.0) * (scholar_pct / 100)
-    else:
-        sps_amount = explicit_sps
     sps_price = prices.get("SPS") or prices.get("sps") or 0
-    usd_value = sps_amount * sps_price
+    if explicit_sps is not None:
+        usd_value = explicit_sps * sps_price
+    else:
+        usd_value = totals.overall.usd * (scholar_pct / 100)
 
     if currency_key == "USD":
         return f"${usd_value:,.2f}"
-    if sps_amount == 0 or usd_value == 0:
+    if usd_value == 0:
         if currency_key == "SPS":
-            return f"{sps_amount:,.2f} SPS (${usd_value:,.2f})"
+            return "0.00 SPS ($0.00)"
         return f"0.00 {currency_key}"
     if currency_key == "SPS":
+        if sps_price:
+            sps_amount = usd_value / sps_price
+        else:
+            sps_amount = totals.overall.token_amounts.get("SPS", 0.0) * (scholar_pct / 100)
         return f"{sps_amount:,.2f} SPS (${usd_value:,.2f})"
 
     target_price = prices.get(currency_key) or prices.get(currency_key.lower())

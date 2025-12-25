@@ -262,7 +262,11 @@ def render_page():
                 for idx, (username, user_totals) in enumerate(per_user_totals):
                     scholar_share_usd = user_totals.overall.usd * (scholar_pct / 100)
                     owner_share_usd = user_totals.overall.usd - scholar_share_usd
-                    scholar_share_sps = user_totals.overall.token_amounts.get("SPS", 0) * (scholar_pct / 100)
+                    sps_price = prices.get("SPS") or prices.get("sps") or 0
+                    if sps_price:
+                        scholar_share_sps = scholar_share_usd / sps_price
+                    else:
+                        scholar_share_sps = user_totals.overall.token_amounts.get("SPS", 0) * (scholar_pct / 100)
                     selected_currency = currency_choices.get(idx, default_currency)
                     payout_display = _format_scholar_payout(selected_currency, user_totals, scholar_pct, prices)
                     table_rows.append(
