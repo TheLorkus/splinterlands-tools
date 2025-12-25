@@ -75,7 +75,20 @@ class PriceQuotes:
     token_to_usd: dict[str, float]
 
     def get(self, token: str) -> float | None:
-        return self.token_to_usd.get(token.lower()) or self.token_to_usd.get(token.upper())
+        if not token:
+            return None
+        normalized = str(token).strip()
+        if not normalized:
+            return None
+        lower = normalized.lower()
+        upper = normalized.upper()
+        if lower in self.token_to_usd:
+            return self.token_to_usd[lower]
+        if upper in self.token_to_usd:
+            return self.token_to_usd[upper]
+        if lower == "dec":
+            return 0.001
+        return None
 
 
 @dataclass

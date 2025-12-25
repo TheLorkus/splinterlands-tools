@@ -95,6 +95,18 @@ def _format_token_amounts_dict(token_amounts, prices) -> str:
     return "; ".join(parts)
 
 
+def _token_amounts_usd(token_amounts: dict[str, float], prices: PriceQuotes) -> float:
+    total = 0.0
+    if not token_amounts:
+        return total
+    for token, amount in token_amounts.items():
+        price = prices.get(str(token))
+        if price is None:
+            continue
+        total += float(amount) * price
+    return total
+
+
 def _format_rewards_list(rewards: list[RewardEntry] | list[TournamentResult], prices) -> str:
     parts = []
     for reward in rewards:
@@ -124,13 +136,19 @@ def _format_scholar_payout(
     scholar_pct: float,
     prices: PriceQuotes,
     explicit_sps: float | None = None,
+    explicit_usd: float | None = None,
 ) -> str:
     currency_key = currency.upper()
     sps_price = prices.get("SPS") or prices.get("sps") or 0
-    if explicit_sps is not None:
+    if explicit_usd is not None:
+        usd_value = explicit_usd
+    elif explicit_sps is not None:
         usd_value = explicit_sps * sps_price
     else:
-        usd_value = totals.overall.usd * (scholar_pct / 100)
+        overall_usd = _token_amounts_usd(totals.overall.token_amounts, prices)
+        if not overall_usd:
+            overall_usd = totals.overall.usd
+        usd_value = overall_usd * (scholar_pct / 100)
 
     if currency_key == "USD":
         return f"${usd_value:,.2f}"

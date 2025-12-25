@@ -19,6 +19,7 @@ from features.scholar.service import (
     _record_season_id,
     _safe_float,
     _sum_rewards_usd,
+    _token_amounts_usd,
     aggregate_totals,
     cached_prices,
     cached_rewards,
@@ -101,6 +102,12 @@ def _token_amounts_from_rewards(rewards) -> dict[str, float]:
             continue
         tokens[str(token).upper()] = tokens.get(str(token).upper(), 0.0) + float(amount)
     return tokens
+
+
+def _category_usd(category: CategoryTotals, prices) -> float:
+    if category.token_amounts:
+        return _token_amounts_usd(category.token_amounts, prices)
+    return _safe_float(category.usd)
 
 
 def _previous_season(season_window: SeasonWindow) -> SeasonWindow:
@@ -219,13 +226,17 @@ def render_page():
             st.markdown("### Per-user totals")
             per_user_rows = []
             for username, totals in per_user_totals:
+                ranked_usd = _category_usd(totals.ranked, prices)
+                brawl_usd = _category_usd(totals.brawl, prices)
+                tournament_usd = _category_usd(totals.tournament, prices)
+                overall_usd = _category_usd(totals.overall, prices)
                 per_user_rows.append(
                     {
                         "User": username,
-                        "Overall (USD)": totals.overall.usd,
-                        "Ranked (USD)": totals.ranked.usd,
-                        "Brawl (USD)": totals.brawl.usd,
-                        "Tournament (USD)": totals.tournament.usd,
+                        "Overall (USD)": overall_usd,
+                        "Ranked (USD)": ranked_usd,
+                        "Brawl (USD)": brawl_usd,
+                        "Tournament (USD)": tournament_usd,
                     }
                 )
             st.dataframe(
@@ -260,22 +271,32 @@ def render_page():
                 default_currency = currency_options[default_currency_idx]
                 table_rows = []
                 for idx, (username, user_totals) in enumerate(per_user_totals):
-                    scholar_share_usd = user_totals.overall.usd * (scholar_pct / 100)
-                    owner_share_usd = user_totals.overall.usd - scholar_share_usd
+                    ranked_usd = _category_usd(user_totals.ranked, prices)
+                    brawl_usd = _category_usd(user_totals.brawl, prices)
+                    tournament_usd = _category_usd(user_totals.tournament, prices)
+                    overall_usd = _category_usd(user_totals.overall, prices)
+                    scholar_share_usd = overall_usd * (scholar_pct / 100)
+                    owner_share_usd = overall_usd - scholar_share_usd
                     sps_price = prices.get("SPS") or prices.get("sps") or 0
                     if sps_price:
                         scholar_share_sps = scholar_share_usd / sps_price
                     else:
                         scholar_share_sps = user_totals.overall.token_amounts.get("SPS", 0) * (scholar_pct / 100)
                     selected_currency = currency_choices.get(idx, default_currency)
-                    payout_display = _format_scholar_payout(selected_currency, user_totals, scholar_pct, prices)
+                    payout_display = _format_scholar_payout(
+                        selected_currency,
+                        user_totals,
+                        scholar_pct,
+                        prices,
+                        explicit_usd=scholar_share_usd,
+                    )
                     table_rows.append(
                         {
                             "User": username,
-                            "Overall (USD)": user_totals.overall.usd,
-                            "Ranked (USD)": user_totals.ranked.usd,
-                            "Brawl (USD)": user_totals.brawl.usd,
-                            "Tournament (USD)": user_totals.tournament.usd,
+                            "Overall (USD)": overall_usd,
+                            "Ranked (USD)": ranked_usd,
+                            "Brawl (USD)": brawl_usd,
+                            "Tournament (USD)": tournament_usd,
                             "Scholar share (USD)": scholar_share_usd,
                             "Owner share (USD)": owner_share_usd,
                             "Scholar share (SPS)": scholar_share_sps,
