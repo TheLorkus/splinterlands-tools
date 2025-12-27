@@ -83,7 +83,7 @@ def _sync_for_season(
 
 def main() -> None:
     load_dotenv()
-    parser = argparse.ArgumentParser(description="Sync season totals to Supabase before season boundary.")
+    parser = argparse.ArgumentParser(description="Sync season totals to the database before season boundary.")
     parser.add_argument(
         "--usernames",
         "-u",

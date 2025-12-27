@@ -190,12 +190,12 @@ def _build_payload(
 def main() -> None:
     load_dotenv()
 
-    parser = argparse.ArgumentParser(description="Upsert historical season rows for a single username into supabase.")
+    parser = argparse.ArgumentParser(description="Upsert historical season rows for a single username into the database.")
     parser.add_argument("csv_path", help="CSV file exported from your spreadsheet.")
     parser.add_argument(
         "--table",
         default=TABLE_NAME,
-        help="Supabase table to upsert rows into (default: season_rewards).",
+        help="Database table to upsert rows into (default: season_rewards).",
     )
     parser.add_argument(
         "--username",
@@ -216,12 +216,12 @@ def main() -> None:
     parser.add_argument(
         "--key",
         default=os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
-        help="Supabase service-role key (falls back to SUPABASE_SERVICE_ROLE_KEY).",
+        help="Service-role key (falls back to SUPABASE_SERVICE_ROLE_KEY).",
     )
     parser.add_argument(
         "--url",
         default=os.getenv("SUPABASE_URL"),
-        help="Supabase URL (falls back to SUPABASE_URL).",
+        help="Database URL (falls back to SUPABASE_URL).",
     )
     parser.add_argument(
         "--batch-size",
@@ -232,7 +232,7 @@ def main() -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print the payloads without hitting Supabase (useful for confirming CSV headers).",
+        help="Print the payloads without hitting the database (useful for confirming CSV headers).",
     )
     parser.add_argument(
         "--season-api",

@@ -294,6 +294,11 @@ def _extract_cycle_fields(record: dict[str, Any], detail: dict[str, Any]) -> dic
     }
 
 
+def _is_perfect_record(wins: int, losses: int, draws: int) -> bool:
+    battles_played = wins + losses + draws
+    return battles_played > 0 and wins == battles_played
+
+
 def ingest_brawl_ids(
     guild_id: str,
     brawl_ids: Sequence[str],
@@ -313,6 +318,7 @@ def ingest_brawl_ids(
 
     cycle_rows: list[dict[str, Any]] = []
     player_rows: list[dict[str, Any]] = []
+    reward_rows: list[dict[str, Any]] = []
 
     for brawl_id in brawl_ids:
         record = record_by_id.get(brawl_id, {})
@@ -365,11 +371,23 @@ def ingest_brawl_ids(
                     "updated_at": now_iso,
                 }
             )
+            if _is_perfect_record(wins, losses, draws):
+                reward_rows.append(
+                    {
+                        "brawl_id": brawl_id,
+                        "guild_id": guild_id,
+                        "player": str(name),
+                        "is_perfect": True,
+                        "updated_at": now_iso,
+                    }
+                )
 
     if cycle_rows:
         _postgrest_upsert(url, key, BRAWL_CYCLES_TABLE, cycle_rows, on_conflict="brawl_id")
     if player_rows:
         _postgrest_upsert(url, key, BRAWL_PLAYER_CYCLE_TABLE, player_rows, on_conflict="brawl_id,player")
+    if reward_rows:
+        _postgrest_upsert(url, key, BRAWL_REWARDS_TABLE, reward_rows, on_conflict="brawl_id,player")
 
     return {"cycles": len(cycle_rows), "players": len(player_rows)}
 

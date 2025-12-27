@@ -16,7 +16,7 @@ from scholar_helper.services.brawl_persistence import (  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Ingest recent brawls into Supabase.")
+    parser = argparse.ArgumentParser(description="Ingest recent brawls into the database.")
     parser.add_argument("--guild-id", required=True, help="Guild ID to ingest.")
     parser.add_argument("--last-n", type=int, default=3, help="Number of recent cycles to ingest.")
     args = parser.parse_args(argv)

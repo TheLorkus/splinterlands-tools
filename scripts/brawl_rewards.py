@@ -1,7 +1,7 @@
 """Admin-only CLI for managing brawl reward delegations.
 
 This script is intentionally separate from the Streamlit UI so reward delegations are not
-publicly editable. It uses the Supabase service role key server-side.
+publicly editable. It uses the database service role key server-side.
 
 Environment:
 - SUPABASE_URL

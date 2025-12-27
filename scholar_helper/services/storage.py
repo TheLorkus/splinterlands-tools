@@ -54,7 +54,7 @@ def _get_supabase_credentials() -> tuple[str, str] | None:
 
 
 def get_supabase_anon_client() -> tuple[str, str] | None:
-    """Return (url, anon_key) for read-only Supabase access."""
+    """Return (url, anon_key) for read-only database access."""
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_ANON_KEY")
     if (not url or not key) and st is not None:
@@ -81,15 +81,15 @@ def get_supabase_service_client() -> tuple[str, str] | None:
 
 def get_supabase_client() -> tuple[str, str] | None:
     """
-    Backwards-compatible helper used by the app code to check whether Supabase is configured.
+    Backwards-compatible helper used by the app code to check whether database access is configured.
 
-    We return credentials instead of a Supabase client to avoid dependency conflicts on Streamlit
+    We return credentials instead of a client instance to avoid dependency conflicts on Streamlit
     Cloud. The upsert helpers below use the REST API directly via requests.
     """
     global _last_error
     creds = _get_supabase_credentials()
     if not creds:
-        _last_error = "Missing SUPABASE_URL or key"
+        _last_error = "Missing database URL or key"
         return None
     _last_error = None
     return creds
@@ -121,17 +121,17 @@ def _postgrest_upsert(
         try:
             resp = requests.post(f"{url}/rest/v1/{table}", json=rows, headers=headers, params=params, timeout=timeout)
             if resp.status_code >= 300:
-                _last_error = f"Supabase upsert failed: {resp.status_code} {resp.text}"
+                _last_error = f"Database upsert failed: {resp.status_code} {resp.text}"
                 logger.error(_last_error)
                 return False
             _last_error = None
             return True
         except Exception as exc:
             attempt += 1
-            _last_error = f"Supabase upsert failed (attempt {attempt}): {exc}"
+            _last_error = f"Database upsert failed (attempt {attempt}): {exc}"
             logger.error(_last_error)
             if attempt > retries:
-                _last_error = f"Supabase upsert failed: {exc}"
+                _last_error = f"Database upsert failed: {exc}"
                 return False
             time.sleep(1.5 * attempt)
     return False
@@ -155,7 +155,7 @@ def _as_params(params: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 def _supabase_fetch(path: str, params: Mapping[str, Any] | None = None) -> list[dict[str, object]]:
-    """Lightweight GET helper for Supabase REST endpoints/views."""
+    """Lightweight GET helper for database REST endpoints/views."""
     global _last_error
     creds = get_supabase_client()
     if creds is None:
@@ -170,12 +170,12 @@ def _supabase_fetch(path: str, params: Mapping[str, Any] | None = None) -> list[
             timeout=20,
         )
     except Exception as exc:
-        _last_error = f"Supabase fetch failed: {exc}"
+        _last_error = f"Database fetch failed: {exc}"
         logger.error(_last_error)
         return []
 
     if resp.status_code >= 300:
-        _last_error = f"Supabase fetch failed: {resp.status_code} {resp.text[:512]}"
+        _last_error = f"Database fetch failed: {resp.status_code} {resp.text[:512]}"
         logger.error(_last_error)
         return []
 
@@ -191,7 +191,7 @@ def _supabase_fetch_with_key(
     path: str,
     params: Mapping[str, Any] | None = None,
 ) -> list[dict[str, object]]:
-    """GET helper for Supabase REST endpoints with explicit credentials."""
+    """GET helper for database REST endpoints with explicit credentials."""
     global _last_error
     try:
         resp = requests.get(
@@ -201,12 +201,12 @@ def _supabase_fetch_with_key(
             timeout=20,
         )
     except Exception as exc:
-        _last_error = f"Supabase fetch failed: {exc}"
+        _last_error = f"Database fetch failed: {exc}"
         logger.error(_last_error)
         return []
 
     if resp.status_code >= 300:
-        _last_error = f"Supabase fetch failed: {resp.status_code} {resp.text[:512]}"
+        _last_error = f"Database fetch failed: {resp.status_code} {resp.text[:512]}"
         logger.error(_last_error)
         return []
 
@@ -707,7 +707,7 @@ def upsert_season_snapshot_if_better(
     """
     creds = get_supabase_client()
     if creds is None:
-        return False, "Supabase is not configured"
+        return False, "Database access is not configured"
 
     normalized_username = _normalize_username(username)
     existing = fetch_season_snapshot(normalized_username, season.id)
@@ -753,7 +753,7 @@ def upsert_season_snapshot_if_better(
     url, key = creds
     success = _postgrest_upsert(url, key, table, payload, on_conflict="username,season_id")
     if not success:
-        return False, get_last_supabase_error() or "Supabase upsert failed"
+        return False, get_last_supabase_error() or "Database upsert failed"
 
     # Differentiate update vs insert by checking previous presence.
     action = "Inserted" if existing is None else "Updated"
@@ -968,8 +968,8 @@ def fetch_season_history(username: str) -> list[dict[str, object]]:
     resp = requests.get(endpoint, headers=headers, timeout=15)
     if resp.status_code >= 300:
         global _last_error
-        _last_error = f"Supabase fetch failed: {resp.status_code} {resp.text[:2048]}"
-        logger.error("Supabase fetch failed: %s %s", resp.status_code, resp.text)
+        _last_error = f"Database fetch failed: {resp.status_code} {resp.text[:2048]}"
+        logger.error("Database fetch failed: %s %s", resp.status_code, resp.text)
         return []
     data = resp.json() or []
     logger.debug("Fetched %d history rows for %s", len(data), username)
@@ -993,6 +993,6 @@ def update_season_currency(username: str, season_id: int, currency: str) -> bool
     )
     if resp.status_code >= 300:
         global _last_error
-        _last_error = f"Supabase update failed: {resp.status_code} {resp.text}"
+        _last_error = f"Database update failed: {resp.status_code} {resp.text}"
         return False
     return True

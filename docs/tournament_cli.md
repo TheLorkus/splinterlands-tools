@@ -5,7 +5,7 @@ This guide covers the CLI workflow for managing reward card delegations tied to 
 ## Prerequisites
 
 - Python environment with project dependencies installed.
-- Supabase credentials available to the process:
+- Database credentials available to the process:
   - `SUPABASE_URL`
   - `SUPABASE_SERVICE_ROLE_KEY`
 - Reward card catalog populated in `public.reward_cards`.

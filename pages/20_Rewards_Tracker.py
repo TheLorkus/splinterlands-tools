@@ -321,11 +321,11 @@ def render_page():
         supabase_creds = get_supabase_client()
         snapshot_currency_by_user = {username: currency_choices.get(idx, default_currency) if scholar_mode else "SPS" for idx, (username, _) in enumerate(per_user_totals)}
 
-        st.markdown("### Season snapshot to Supabase")
+        st.markdown("### Season snapshot to database")
         if not usernames:
             st.info("Add at least one username to save a snapshot.")
         elif supabase_creds is None:
-            st.warning("Supabase is not configured. Set SUPABASE_URL and a key to enable snapshots.")
+            st.warning("Database access is not configured. Set SUPABASE_URL and a key to enable snapshots.")
         else:
             existing_snapshots = []
             for username in usernames:
@@ -343,7 +343,7 @@ def render_page():
             if existing_snapshots:
                 st.dataframe(existing_snapshots, hide_index=True, width="stretch")
 
-            if st.button("Save/Update season snapshot to Supabase", type="primary"):
+            if st.button("Save/Update season snapshot to database", type="primary"):
                 results = []
                 for username in usernames:
                     with st.spinner(f"Saving snapshot for {username} (season {active_season.id})..."):

@@ -1,11 +1,11 @@
 <file name=1 path=/Users/allan/Projects/splinter-lands/splinterlands-tools/docs/brawl_cli.md># Brawl CLI Guide
 
-This guide covers the CLI workflow for ingesting brawl history into Supabase.
+This guide covers the CLI workflow for ingesting brawl history into the database.
 
 ## Prerequisites
 
 - Python environment with project dependencies installed.
-- Supabase credentials available to the process:
+- Database credentials available to the process:
   - `SUPABASE_URL`
   - `SUPABASE_SERVICE_ROLE_KEY`
   - `SUPABASE_ANON_KEY` (read-only checks)
@@ -26,7 +26,7 @@ Arguments:
 ## Brawl Reward Delegation (Admin)
 
 Reward card delegations for perfect brawls are intentionally **not editable from the UI**.
-They are managed via Supabase or an admin-only CLI.
+They are managed via the database or an admin-only CLI.
 
 The admin CLI script lives at:
 
@@ -66,7 +66,7 @@ python scripts/brawl_rewards.py clear \
 - Uses `SUPABASE_SERVICE_ROLE_KEY`; no anon or user auth.
 - Upserts into the brawl reward table (one row per brawl/player).
 - Intended for guild admins only.
-- UI displays rewards read-only once present in Supabase.
+- UI displays rewards read-only once present in the database.
 - Re-running commands is safe and idempotent.
 - If the brawl_rewards table has a foil column, --foil RF|GF will be stored; otherwise the flag is ignored safely.
 
@@ -98,7 +98,7 @@ python scripts/ingest_brawls.py --guild-id 9780675dc7e05224af937c37b30c3812d4e2c
   - Add the guild to `public.tracked_guilds` and set `enabled = true`.
 - "Brawl refresh failed" in the UI or CLI errors:
   - Confirm `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set.
-  - Verify the Supabase project contains the brawl tables.
+  - Verify the database contains the brawl tables.
 - No rows ingested:
   - Check if the guild has recent brawl records in Splinterlands.
 

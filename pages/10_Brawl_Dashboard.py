@@ -80,9 +80,9 @@ def render_page() -> None:
     if st.sidebar.button(
         "Refresh last cycles",
         disabled=not tracked,
-        help="Fetch and store the most recent brawl cycles in Supabase.",
+        help="Fetch and store the most recent brawl cycles in the database.",
     ):
-        with st.spinner("Refreshing brawl history in Supabase..."):
+        with st.spinner("Refreshing brawl history in the database..."):
             recent_records = fetch_recent_finished_brawl_records(guild_id, n=cycle_window)
             recent_ids = [str(row.get("tournament_id")) for row in recent_records if row.get("tournament_id")]
             result = ingest_brawl_ids(guild_id, recent_ids, records=recent_records)
@@ -90,7 +90,7 @@ def render_page() -> None:
             st.success("Brawl history refreshed.")
             st.rerun()
         else:
-            st.error("Brawl refresh failed. Check Supabase credentials or tracked guilds.")
+            st.error("Brawl refresh failed. Check database credentials or tracked guilds.")
 
     recent_records = fetch_recent_finished_brawl_records(guild_id, n=cycle_window)
     recent_ids = [str(row.get("tournament_id")) for row in recent_records if row.get("tournament_id")]
@@ -98,12 +98,12 @@ def render_page() -> None:
     using_supabase = bool(recent_ids) and not missing_ids
 
     if using_supabase:
-        with st.spinner("Fetching brawl history from Supabase..."):
+        with st.spinner("Fetching brawl history from the database..."):
             cycle_rows = fetch_brawl_cycles_supabase(guild_id, recent_ids)
             history = build_history_df_from_cycles(cycle_rows)
             player_rows_raw = fetch_brawl_player_cycle_supabase(guild_id, recent_ids)
             player_rows = build_player_rows_from_supabase(cycle_rows, player_rows_raw)
-        st.caption("Source: Supabase")
+        st.caption("Source: database")
     else:
         with st.spinner("Fetching brawl history..."):
             history = fetch_guild_brawls(guild_id)
@@ -297,9 +297,9 @@ def render_page() -> None:
                         height=400,
                     )
                     if using_supabase:
-                        st.info("Reward delegations are read-only in the dashboard. " "To update rewards, use the Supabase dashboard or an admin script.")
+                        st.info("Reward delegations are read-only in the dashboard. " "To update rewards, use the database console or an admin script.")
                     else:
-                        st.info("Refresh brawl history to enable reward display from Supabase.")
+                        st.info("Refresh brawl history to enable reward display from the database.")
 
     with tabs[1]:
         st.subheader(f"{guild_label} Player Stats Over Window")

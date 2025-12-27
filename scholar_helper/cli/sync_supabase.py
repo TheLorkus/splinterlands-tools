@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     parser = argparse.ArgumentParser(
-        description="Fetch current season totals and sync to Supabase.",
+        description="Fetch current season totals and sync to the database.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
 
     client = get_supabase_client()
     if client is None:
-        logger.error("Supabase is not configured (missing SUPABASE_URL or key).")
+        logger.error("Database access is not configured (missing SUPABASE_URL or key).")
         return 1
 
     reward_map, tournament_map = fetch_rows_for_season(usernames, season)
