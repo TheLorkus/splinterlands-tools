@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import altair as alt
 import pandas as pd
@@ -100,15 +100,15 @@ def render_page() -> None:
     if using_supabase:
         with st.spinner("Fetching brawl history from the database..."):
             cycle_rows = fetch_brawl_cycles_supabase(guild_id, recent_ids)
-            history = build_history_df_from_cycles(cycle_rows)
+            history = cast(pd.DataFrame, build_history_df_from_cycles(cycle_rows))
             player_rows_raw = fetch_brawl_player_cycle_supabase(guild_id, recent_ids)
-            player_rows = build_player_rows_from_supabase(cycle_rows, player_rows_raw)
+            player_rows = cast(pd.DataFrame, build_player_rows_from_supabase(cycle_rows, player_rows_raw))
         st.caption("Source: database")
     else:
         with st.spinner("Fetching brawl history..."):
-            history = fetch_guild_brawls(guild_id)
+            history = cast(pd.DataFrame, fetch_guild_brawls(guild_id))
         with st.spinner("Fetching player data for recent brawls..."):
-            player_rows = build_player_rows(guild_id, history, max_brawls=40)
+            player_rows = cast(pd.DataFrame, build_player_rows(guild_id, history, max_brawls=40))
         st.caption("Source: Live API")
         if recent_ids:
             missing_count = len(missing_ids)
@@ -288,7 +288,14 @@ def render_page() -> None:
                                 styles.iat[row_idx, col_idx] = "color: #b5b5b5; font-weight: 600;"
                         return styles
 
-                    styled_detail = display_detail.style.format({"Win rate": "{:.1f}%"}).map(_win_rate_bg, subset=["Win rate"]).apply(_reward_styles, axis=None)
+                    styled_detail = (
+                        cast(
+                            Any,
+                            display_detail.style.format({"Win rate": "{:.1f}%"}),
+                        )
+                        .map(_win_rate_bg, subset=["Win rate"])
+                        .apply(_reward_styles, axis=None)
+                    )
 
                     st.dataframe(
                         styled_detail,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from difflib import SequenceMatcher
+from typing import cast
 
 import pandas as pd
 import requests
@@ -59,8 +60,10 @@ def build_player_rows(guild_id: str, history: pd.DataFrame, max_brawls: int = 40
     cycles = sorted(history["cycle"].dropna().unique(), reverse=True)[:max_brawls]
     rows = []
     for _, row in history[history["cycle"].isin(cycles)].iterrows():
-        tournament_id = row["tournament_id"]
-        cycle = int(row["cycle"]) if not pd.isna(row["cycle"]) else None
+        tournament_id = cast(str, row["tournament_id"])
+        cycle_raw = row["cycle"]
+        cycle_is_na = cast(bool, pd.isna(cycle_raw))
+        cycle = int(cycle_raw) if not cycle_is_na else None
         try:
             details = fetch_brawl_details(tournament_id, guild_id)
         except Exception:

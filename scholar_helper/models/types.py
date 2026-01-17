@@ -13,7 +13,8 @@ class SeasonWindow:
     @classmethod
     def from_api(cls, payload: dict[str, object]) -> SeasonWindow:
         """Build a SeasonWindow from the season endpoint payload."""
-        season_id = int(payload.get("id", 0))
+        season_id_raw = payload.get("id")
+        season_id = int(season_id_raw) if isinstance(season_id_raw, int | str) else 0
         ends_raw = payload.get("ends")
         ends = _parse_timestamp(ends_raw)
         # Splinterlands seasons are 15 days; derive start conservatively if not provided.
@@ -23,7 +24,8 @@ class SeasonWindow:
     @classmethod
     def from_settings(cls, current: dict[str, object], previous: dict[str, object] | None) -> SeasonWindow:
         """Build a SeasonWindow using current + previous season info from /settings."""
-        season_id = int(current.get("id", 0))
+        season_id_raw = current.get("id")
+        season_id = int(season_id_raw) if isinstance(season_id_raw, int | str) else 0
         ends = _parse_timestamp(current.get("ends"))
         prev_end = _parse_timestamp(previous.get("ends")) if previous else None
         starts = prev_end or (ends - timedelta(days=15))

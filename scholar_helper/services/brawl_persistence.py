@@ -284,8 +284,10 @@ def _fetch_brawl_detail(guild_id: str, brawl_id: str) -> dict[str, Any]:
 
 
 def _extract_cycle_fields(record: dict[str, Any], detail: dict[str, Any]) -> dict[str, Any]:
-    detail_brawl = detail.get("brawl") if isinstance(detail.get("brawl"), dict) else {}
-    detail_tournament = detail.get("tournament") if isinstance(detail.get("tournament"), dict) else {}
+    detail_brawl_raw = detail.get("brawl")
+    detail_brawl: dict[str, Any] = detail_brawl_raw if isinstance(detail_brawl_raw, dict) else {}
+    detail_tournament_raw = detail.get("tournament")
+    detail_tournament: dict[str, Any] = detail_tournament_raw if isinstance(detail_tournament_raw, dict) else {}
     return {
         "tier": _coerce_int(record.get("tier") or detail_brawl.get("tier") or detail_tournament.get("tier")),
         "starts_at": _parse_dt(record.get("start_date") or detail_brawl.get("start_date") or detail_tournament.get("start_date")),
@@ -329,13 +331,15 @@ def ingest_brawl_ids(
             continue
 
         cycle_fields = _extract_cycle_fields(record, detail)
+        starts_at = cycle_fields.get("starts_at")
+        ends_at = cycle_fields.get("ends_at")
         cycle_rows.append(
             {
                 "brawl_id": brawl_id,
                 "guild_id": guild_id,
                 "tier": cycle_fields.get("tier"),
-                "starts_at": cycle_fields.get("starts_at").isoformat() if cycle_fields.get("starts_at") else None,
-                "ends_at": cycle_fields.get("ends_at").isoformat() if cycle_fields.get("ends_at") else None,
+                "starts_at": starts_at.isoformat() if isinstance(starts_at, datetime) else None,
+                "ends_at": ends_at.isoformat() if isinstance(ends_at, datetime) else None,
                 "season_id": cycle_fields.get("season_id"),
                 "raw_summary": {"record": record, "detail": detail},
                 "ingested_at": now_iso,
@@ -351,7 +355,8 @@ def ingest_brawl_ids(
             name = player.get("player") or player.get("name")
             if not name:
                 continue
-            record_payload = player.get("record") if isinstance(player.get("record"), dict) else player
+            record_raw = player.get("record")
+            record_payload: dict[str, Any] = record_raw if isinstance(record_raw, dict) else player
             wins = _coerce_int(record_payload.get("wins")) or 0
             losses = _coerce_int(record_payload.get("losses")) or 0
             draws = _coerce_int(record_payload.get("draws")) or 0

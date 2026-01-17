@@ -521,7 +521,7 @@ def render_page(embed_mode: bool = False) -> None:
                 df.loc[df["Points"] >= threshold, "Player"] = ticket_icon + " " + df.loc[df["Points"] >= threshold, "Player"].astype(str)
                 qualifying = df[df["Points"] >= threshold]
                 if not qualifying.empty:
-                    cutoff_idx = qualifying.index[-1]
+                    cutoff_idx = int(qualifying.index[-1])
                     sentinel = {
                         "Player": f"Cutoff at {threshold:.0f} pts",
                         "Points": None,

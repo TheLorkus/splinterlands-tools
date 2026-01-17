@@ -56,7 +56,7 @@ def _normalize_prize_item(item: dict) -> dict | None:
 
 
 def _parse_prizes(player: dict, payouts: list) -> tuple[list | None, str | None]:
-    prize_tokens: list[dict] = []
+    prize_tokens: list[dict] | None = []
     prize_text_parts: list[str] = []
 
     direct_prize = player.get("ext_prize_info") or player.get("prizes") or player.get("prize") or player.get("player_prize")

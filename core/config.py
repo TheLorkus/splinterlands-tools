@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Literal
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -8,7 +9,7 @@ from dotenv import load_dotenv
 _ENV_LOADED_FLAG = "_SL_TOOLS_ENV_LOADED"
 
 
-def setup_page(title: str, layout: str = "wide") -> None:
+def setup_page(title: str, layout: Literal["wide", "centered"] | None = "wide") -> None:
     """Set common page config and load environment variables once."""
     if not os.environ.get(_ENV_LOADED_FLAG):
         load_dotenv()
