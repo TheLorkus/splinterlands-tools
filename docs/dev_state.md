@@ -1,69 +1,122 @@
 # Dev State
 
-## Architecture overview
-- Entry point: `app.py` sets Streamlit config and routes to `pages/01_Home.py`; shared helpers live in `core/config.py` and `core/home.py`.
-- UI pages:
-  - `pages/01_Home.py`: hub with page links.
-  - `pages/10_Brawl_Dashboard.py`: Brawl Assistant (guild history, player stats, trend charts).
-  - `pages/20_Rewards_Tracker.py`: Rewards Tracker with optional Scholar mode, summaries, tournaments, and history. Snapshot saves now reuse the same fetched reward/tournament rows shown in the UI (no refetch drift), and the history tab re-values token buckets with current prices when available.
-  - `pages/30_Tournament_Series.py`: Series leaderboard + tournament configurator, database ingest trigger, embeds `Tournament_Series.md`.
-  - `pages/40_SPS_Analytics.py`: placeholder page.
-- Modules:
-  - `scholar_helper/services/api.py`: Splinterlands API client + parsing.
-  - `scholar_helper/services/aggregation.py`: season filtering and totals.
-  - `scholar_helper/services/storage.py`: database PostgREST/RPC helpers, including tournament reward card catalog and per-tournament delegation fetch helpers.
-  - `scholar_helper/services/brawl_dashboard.py`: brawl endpoints + helpers.
-  - `scholar_helper/services/brawl_persistence.py`: database brawl persistence (tracked guild checks, ingest, reads).
-  - `series/leaderboard.py` and `series/tournament.py`: Tournament Series UI logic.
-  - `features/*`: thin re-exports for page imports.
-  - `scripts/*` and `scholar_helper/cli/*`: CLI sync/import/ingest utilities.
-  - `supabase/*`: migrations + Edge function(s).
+## 1) What this repo is
+Splinterlands Tools is a Streamlit multipage app that combines a Brawl Assistant, Scholar Rewards Tracker, and Tournament Series tooling for Splinterlands data. The brawl tracker focuses on guild brawl history and player stats, with optional Supabase-backed persistence for tracked guilds. The repo also includes CLI utilities for ingesting brawl cycles, tournament results, and season snapshots into Supabase.
 
-## Data flow and caching
-- Brawl Dashboard: UI -> `features/brawl/service.py` -> database-first reads for tracked guilds (`tracked_guilds`, `brawl_cycles`, `brawl_player_cycle`, `brawl_rewards`) with fallback to live Splinterlands API (`/guilds/brawl_records`, `/tournaments/find_brawl`, `/guilds/list`). Cached via `st.cache_data` (TTL 300s for live brawl calls, 86400s for guild list). Manual refresh triggers ingestion via service-role key; drill-down shows reward card text with foil styling when rewards exist.
-- Rewards Tracker: UI -> `features/scholar/service.py` -> `scholar_helper/services/api.py` -> Splinterlands API (`/settings`, `/season`, `/prices`, `/players/unclaimed_balance_history`, `/tournaments/completed`, `/tournaments/find`). Cached via `st.cache_data` (TTL 300s) plus in-memory `cachetools.TTLCache` (TTL 300s) inside the API module. Snapshot saves use the already-fetched rows per user to avoid stale writes; history rows are displayed with USD re-derived from stored token buckets when price data is available.
-- Tournament Series: UI -> `series/*` -> `scholar_helper/services/storage.py` -> database tables/views (`tournament_events`, `tournament_results`, `tournament_result_points`, `tournament_leaderboard_totals`). Falls back to live Splinterlands API via `fetch_hosted_tournaments` + `fetch_tournament_leaderboard` when the database has no rows. When the organizer is "lorkus", the series leaderboard and per-tournament leaderboard also display delegated reward cards pulled from the reward card catalog and tournament reward annotations, ordered by tournament_id across the series window.
-- Database persistence: CLI/scripts (`scripts/season_sync.py`, `scholar_helper/cli/sync_supabase.py`, `scripts/import_season_history.py`) and the UI history tab read/write via `storage.py` (PostgREST). Tournament ingest is handled by the `tournament-ingest` Edge Function (scheduled via cron + manual UI trigger).
+## 2) Current features
+- Streamlit hub with Brawl Assistant, Rewards Tracker, and Tournament Series pages.
+- Brawl Assistant: guild brawl history, per-player stats, and trend charts with optional database-backed reads and reward card annotations.
+- Supabase persistence for brawls (cycles, player rows, reward annotations) and tournaments.
+- CLI utilities for brawl ingest, brawl reward delegation, season sync, tournament refresh, and CSV import.
+- Supabase migrations and Edge functions for tournament ingest and season schedule refresh.
 
-## Database configuration and schema
-- Config sources: `.env` and Streamlit secrets (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, optional `SUPABASE_ANON_KEY`). `SUPABASE_SERVICE_KEY` is a legacy alias; prefer `SUPABASE_SERVICE_ROLE_KEY` in new setups (see `scholar_helper/services/storage.py`).
-- Edge functions:
-  - `supabase/functions/update-season-schedule` (calls the scheduler). Env: `SUPABASE_URL`, optional `SYNC_SEASON_ENDPOINT`, `SYNC_SCHEDULE_NAME`, `SYNC_FUNCTION_NAME`. Uses the incoming `Authorization` header for database auth.
-  - `supabase/functions/tournament-ingest` (Splinterlands ingest + upsert). Env: `SUPABASE_URL`. Uses the incoming `Authorization` header for database auth.
-  - `season-sync` Edge function is referenced in migrations/README but not present in `supabase/functions`.
-- Extensions and jobs (migrations): `pg_net`, `pg_cron`, `http`; cron jobs `season-sync-hourly`, `refresh-season-sync-cron`, and `tournament-ingest-frequent` (*/10 minutes, window set to 3 days). RLS is enabled on `reward_cards` and `tournament_rewards` with public read policies.
-- Tables/views/functions (from migrations and code usage):
-  - Tables: `public.tracked_guilds`, `public.brawl_cycles`, `public.brawl_player_cycle`, `public.brawl_rewards`, `public.tournament_events`, `public.tournament_results`, `public.tournament_ingest_organizers`, `public.tournament_ingest_state`, `public.point_schemes`, `public.series_configs`, `public.season_rewards` (altered in migrations), `public.tournament_logs` (used by scripts), `public.reward_cards`, `public.tournament_rewards`.
-  - Views: `public.tournament_result_points`, `public.tournament_leaderboard_totals`.
-  - Functions: `public.refresh_tournament_ingest` (legacy), `public.normalize_prize_item`, `public.calculate_points_for_finish`, `public.insert_series_config_from_json`, `call_season_sync`, `call_update_season_schedule`, `public.call_tournament_ingest`.
-  - RLS: public SELECT policies + service_role write policies for ingest/config tables (see `supabase/migrations/20251210223200_optimize_rls_policies.sql`).
-- App write fields into `season_rewards`: `season_id`, `season_start`, `season_end`, `username`, `ranked_tokens`, `brawl_tokens`, `tournament_tokens`, `entry_fees_tokens`, `ranked_usd`, `brawl_usd`, `tournament_usd`, `entry_fees_usd`, `overall_usd`, `scholar_pct`, `payout_currency`, `scholar_payout` (see `scholar_helper/services/storage.py`, `scripts/import_season_history.py`).
+## 3) Architecture overview (modules/services, data flow)
+- UI layer: `app.py` routes to `pages/*` (Brawl Assistant lives in `pages/10_Brawl_Dashboard.py`).
+- Brawl services:
+  - `features/brawl/service.py` re-exports brawl helpers for UI pages.
+  - `scholar_helper/services/brawl_dashboard.py` fetches live data from Splinterlands and computes stats.
+  - `scholar_helper/services/brawl_persistence.py` reads/writes brawl tables in Supabase.
+- Data flow for brawls:
+  - Render: `pages/10_Brawl_Dashboard.py` -> `features/brawl/service.py` ->
+    - Database path (tracked guilds with stored cycles): `fetch_brawl_cycles_supabase` + `build_history_df_from_cycles`, and `fetch_brawl_player_cycle_supabase` + `build_player_rows_from_supabase`.
+    - Live API fallback: `fetch_guild_brawls` + `build_player_rows` (Splinterlands endpoints: `/guilds/brawl_records`, `/tournaments/find_brawl`).
+  - Refresh: UI button or `scripts/ingest_brawls.py` -> `ingest_brawl_ids`.
+  - Rewards: `fetch_brawl_rewards_supabase` returns reward annotations; admin-only writes via `scripts/brawl_rewards.py`.
+- Caching: `st.cache_data` in `scholar_helper/services/brawl_dashboard.py` for brawl calls (TTL 300s) and guild list (TTL 86400s).
 
-## Implemented vs stubbed
-- Implemented:
-  - Streamlit hub + Brawl Assistant + Rewards Tracker (Scholar mode optional).
-  - Brawl persistence to the database for tracked guilds (cycles, player stats, reward annotations).
-  - Tournament Series leaderboard/configurator with database-backed data and API fallback.
-  - Database ingest functions, views, and point scheme seed data.
-  - CLI/scripts for season sync, CSV history import, and brawl ingest.
-  - Tournament Series delegated card tracking: catalog-backed reward cards and per-tournament annotations, displayed read-only in series and per-event leaderboards for organizer "lorkus".
-- Stubbed/placeholder:
-  - SPS Analytics page is a placeholder (`pages/40_SPS_Analytics.py`).
-  - `season-sync` Edge function code not in repo (only referenced in migrations/README).
-  - UI fallback in `pages/30_Tournament_Series.py` returns "Helper not available" if `scholar_helper` isn't importable.
+## 4) Key entrypoints (files + what they do)
+- `app.py`: Streamlit entrypoint, routes to `pages/01_Home.py`.
+- `pages/10_Brawl_Dashboard.py`: Brawl Assistant UI and data rendering.
+- `features/brawl/service.py`: brawl feature API (thin re-export layer).
+- `scholar_helper/services/brawl_dashboard.py`: live brawl API fetch + stats computation.
+- `scholar_helper/services/brawl_persistence.py`: Supabase reads/writes for brawl cycles, players, rewards.
+- `scripts/ingest_brawls.py`: CLI to ingest recent brawl cycles into Supabase.
+- `scripts/brawl_rewards.py`: admin CLI to set or clear brawl reward card annotations.
+- `supabase/migrations/20251222120000_brawl_persistence.sql`: schema for brawl tables and RLS.
+- `docs/brawl_cli.md`: CLI usage for brawl ingest and rewards.
 
-## TODOs and known bugs (top items)
-(Only items documented in the repo are listed.)
-5. Entry fees are tracked but not subtracted from totals (`README.md`).
-6. Brawl ingest is manual only; no scheduler/cron is configured yet (`planning_doc`).
-7. SPS Analytics page is placeholder ("Coming soon") (`pages/40_SPS_Analytics.py`).
+## 5) How to run locally (exact commands)
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 
+# Optional: configure Supabase secrets
+cp .env.example .env
 
-## Edge Function deployment (local CLI)
-1. Install + login: `supabase login`
-2. Link project: `supabase link --project-ref <project-ref>`
-3. Deploy functions:
-   - `supabase functions deploy tournament-ingest`
-   - `supabase functions deploy update-season-schedule`
-4. Set secrets:
-   - `supabase secrets set SUPABASE_URL="https://<project-ref>.supabase.co" SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"`
+streamlit run app.py
+```
+
+## 6) How to run tests/lint/typecheck (exact commands, include pyright if present)
+```bash
+# Lint
+ruff check .
+
+# Format check
+ruff format --check .
+```
+- Tests: no test runner or tests found in repo.
+- Typecheck: no pyright config present; Pylance is used in the editor.
+
+## 7) Configuration and secrets (env vars, where they are used, examples without real values)
+- Local env: `.env` (see `.env.example`).
+- Streamlit secrets: `.streamlit/secrets.toml` (used by `scholar_helper/services/storage.py`).
+
+Example values (do not use real keys):
+```bash
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+SUPABASE_SERVICE_KEY=<legacy-service-key>
+SUPABASE_ANON_KEY=<anon-key>
+DEFAULT_USERNAMES=lorkus,vorkus
+TOURNAMENT_INGEST_MAX_TOURNAMENTS=200
+SYNC_USERNAMES=lorkus,other_player
+SYNC_SCHOLAR_PCT=50
+SYNC_PAYOUT_CURRENCY=SPS
+SYNC_SEASON_ENDPOINT=https://api.splinterlands.com/season?id=171
+SYNC_SCHEDULE_NAME=season-sync
+SYNC_FUNCTION_NAME=season-sync
+```
+Where used:
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`: Supabase access in `scholar_helper/services/storage.py`, brawl persistence, and CLI scripts.
+- `DEFAULT_USERNAMES`: fallback organizers for tournament ingest in `scholar_helper/services/storage.py`.
+- `TOURNAMENT_INGEST_MAX_TOURNAMENTS`: tournament ingest limit in `scholar_helper/services/storage.py`.
+- `SYNC_*`: season sync scripts and `supabase/functions/update-season-schedule`.
+
+## 8) Data/storage (DB tables, files, caches)
+- Supabase tables for brawls: `tracked_guilds`, `brawl_cycles`, `brawl_player_cycle`, `brawl_rewards`.
+- Brawl tables are defined in `supabase/migrations/20251222120000_brawl_persistence.sql` with RLS tied to tracked guilds.
+- Rewards tracker and tournament tables are defined in other Supabase migrations (see `supabase/migrations`).
+- Caches: `st.cache_data` in `scholar_helper/services/brawl_dashboard.py` (brawl APIs and guild list).
+- Data files: CSV imports for season history are expected under `data/` (see `scripts/import_season_history.py`).
+
+## 9) Deployments (Render/Fly/etc if present, how it is deployed)
+- Supabase Edge functions:
+  - `supabase/functions/tournament-ingest` (ingests tournaments).
+  - `supabase/functions/update-season-schedule` (updates season sync schedule).
+- Supabase migrations live under `supabase/migrations/`.
+- CI: GitHub Actions runs ruff (`.github/workflows/ruff.yml`).
+- No Streamlit hosting configuration (Render/Fly/Streamlit Cloud) is defined in this repo.
+
+## 10) Known issues / tech debt (from TODOs, failing tests, comments)
+- Entry fees are tracked but not subtracted from totals (README note).
+- SPS Analytics page is a placeholder (`pages/40_SPS_Analytics.py`).
+- Season-sync Edge function is referenced in migrations/README but not present in `supabase/functions`.
+- Brawl ingestion is manual (UI button or CLI); no scheduler is present for brawl ingest.
+
+## 11) Discord integration notes (based on existing code)
+Brawl summary data producers:
+- `scholar_helper/services/brawl_dashboard.fetch_guild_brawls` (live brawl cycles).
+- `scholar_helper/services/brawl_persistence.fetch_brawl_cycles_supabase` + `build_history_df_from_cycles` (DB-backed cycles).
+- `scholar_helper/services/brawl_dashboard.compute_player_stats` (windowed player stats).
+- `scholar_helper/services/brawl_persistence.build_player_rows_from_supabase` and `build_player_rows` (per-player rows).
+- `scholar_helper/services/brawl_persistence.fetch_brawl_rewards_supabase` (reward annotations).
+
+Clean hook points:
+- Webhook poster (push): after successful `ingest_brawl_ids` in `scholar_helper/services/brawl_persistence.py` or at the end of `scripts/ingest_brawls.py`, build a summary DataFrame and post to Discord.
+- Slash-command bot (pull): build on `features/brawl/service.py` or directly call `fetch_brawl_cycles_supabase` + `build_history_df_from_cycles` for summary, and `compute_player_stats` for player stats, then format a response.
+
+## 12) Open questions
+- Where is the Streamlit app deployed (Streamlit Cloud, Render, etc.)?
+- Should brawl ingestion be scheduled (cron/Edge function), and if so what cadence is desired?
+- Is there a preferred Discord library or existing webhook endpoint for the brawl summary?
